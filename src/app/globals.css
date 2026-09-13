@@ -1,0 +1,351 @@
+/*
+ * The same handwriting face the renderer uses, served from public/fonts, so the
+ * app does not need the network to look like the video. The SVG preview carries
+ * its own copy of this file (see the preview-svg route) and renders in an <img>,
+ * where a page-level @font-face does not apply.
+ */
+@font-face {
+  font-family: 'Caveat';
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url('/fonts/caveat-latin-400.woff2') format('woff2');
+}
+
+:root {
+  --paper: #fdfdfb;
+  --ink: #1f2933;
+  --muted: #64748b;
+  --line: #dfe3e8;
+  --accent: #2563eb;
+  --emphasis: #dc2626;
+  --ok: #0f7b4f;
+  --hand: 'Caveat', 'Segoe Print', cursive;
+  --ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #f4f5f7;
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 20px 80px;
+}
+
+.app-header h1 {
+  font-family: var(--hand);
+  font-size: 44px;
+  margin: 0;
+  letter-spacing: 0.5px;
+}
+
+.app-header p {
+  margin: 4px 0 24px;
+  color: var(--muted);
+}
+
+.card {
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin-bottom: 18px;
+}
+
+.card h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+}
+
+.card .hint {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+textarea,
+input[type='text'] {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-family: var(--ui);
+  font-size: 14px;
+  color: var(--ink);
+  background: #fff;
+  resize: vertical;
+}
+
+textarea:focus,
+input[type='text']:focus {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  border-color: var(--accent);
+}
+
+textarea.script {
+  font-family: var(--hand);
+  font-size: 20px;
+  line-height: 1.4;
+  min-height: 190px;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.row.between {
+  justify-content: space-between;
+}
+
+.counter {
+  color: var(--muted);
+  font-size: 12px;
+  margin-left: auto;
+}
+
+.counter.over {
+  color: var(--emphasis);
+  font-weight: 600;
+}
+
+button {
+  font-family: var(--ui);
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 9px 16px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--muted);
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+button.primary:hover:not(:disabled) {
+  background: #1d4fd7;
+}
+
+button.danger {
+  border-color: var(--emphasis);
+  color: var(--emphasis);
+}
+
+button.ghost {
+  border-color: transparent;
+  background: transparent;
+  padding: 6px 8px;
+}
+
+a.linkbtn {
+  display: inline-block;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+  padding: 9px 16px;
+  text-decoration: none;
+}
+
+a.linkbtn:hover {
+  border-color: var(--muted);
+}
+
+.banner {
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin: 0 0 14px;
+  font-size: 14px;
+  border: 1px solid;
+}
+
+.banner.ok {
+  background: #eefaf3;
+  border-color: #bfe6d2;
+  color: var(--ok);
+}
+
+.banner.bad {
+  background: #fdf1f1;
+  border-color: #f3c9c9;
+  color: var(--emphasis);
+}
+
+.banner.warn {
+  background: #fff8eb;
+  border-color: #f0dcb4;
+  color: #8a5a00;
+}
+
+.banner.muted {
+  background: #f6f7f9;
+  border-color: var(--line);
+  color: var(--muted);
+}
+
+.banner ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+
+.strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  padding: 4px 2px 10px;
+}
+
+.thumb {
+  flex: 0 0 auto;
+  width: 176px;
+  border: 2px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+}
+
+.thumb.active {
+  border-color: var(--accent);
+}
+
+.thumb img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  background: var(--paper);
+  pointer-events: none;
+}
+
+.thumb .cap {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+
+.board {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  object-fit: contain;
+  display: block;
+}
+
+video {
+  width: 100%;
+  border-radius: 10px;
+  background: #000;
+  display: block;
+}
+
+.progress {
+  height: 8px;
+  background: #eceef1;
+  border-radius: 999px;
+  overflow: hidden;
+  margin: 6px 0 10px;
+}
+
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.3s ease;
+}
+
+/*
+ * The bar's width changes several times a second during a render, which is
+ * exactly the kind of movement the reduced-motion preference exists to stop.
+ * The progress is still reported -- in the text below the bar and through the
+ * progressbar's aria-valuenow -- it just stops sliding.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .progress > span {
+    transition: none;
+  }
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.chip {
+  font-size: 12px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  color: var(--muted);
+  background: #fff;
+}
+
+.chip.done {
+  border-color: #bfe6d2;
+  background: #eefaf3;
+  color: var(--ok);
+}
+
+.chip.current {
+  border-color: var(--accent);
+  background: #eaf0fe;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.meta code {
+  font-size: 12px;
+  background: #f4f5f7;
+  padding: 2px 5px;
+  border-radius: 4px;
+}

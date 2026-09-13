@@ -1,0 +1,36 @@
+{
+  "name": "explain-draw-ai",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn a text or topic prompt into a ~5-minute hand-drawn whiteboard explainer video.",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p src/remotion/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "render": "node scripts/render-worker.ts"
+  },
+  "dependencies": {
+    "@remotion/bundler": "4.0.524",
+    "@remotion/google-fonts": "4.0.524",
+    "@remotion/renderer": "4.0.524",
+    "next": "15.5.25",
+    "openai": "7.15.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "remotion": "4.0.524",
+    "roughjs": "4.6.6",
+    "zod": "4.6.4"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.1",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "typescript": "5.9.3",
+    "vitest": "5.0.0"
+  }
+}

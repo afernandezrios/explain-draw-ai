@@ -1,0 +1,28 @@
+node_modules/
+/.next/
+/out/
+next-env.d.ts
+
+# Rendered projects (script.json, scenes.json, clips/*.mp4, out.mp4) are local
+# user data and can be many gigabytes; they are not source.
+# Anchored to the repo root on purpose: an unanchored `projects/` also matches
+# src/app/api/projects/ and silently drops the entire API surface from the repo.
+/projects/
+
+# Secrets. Next.js loads .env, .env.local, .env.development, .env.test,
+# .env.production and their .local variants automatically, so anything that
+# starts with .env stays out of version control -- listed by name, a new variant
+# would be committed the moment someone created it.
+.env*
+!.env.local.example
+
+.DS_Store
+*.log
+*.tsbuildinfo
+
+# Staged review diffs: the build workflow writes one so the review layers have a
+# single file to read. Hundreds of kilobytes, regenerable from `baseline_commit`
+# in one command, and never source.
+_bmad-output
+_bmad
+.claude
