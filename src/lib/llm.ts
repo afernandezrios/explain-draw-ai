@@ -41,8 +41,8 @@ import {
   type Scenes,
 } from './schema.ts';
 
-export const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
-export const DEFAULT_MODEL = 'gpt-5.6-terra';
+export const DEFAULT_BASE_URL = 'https://api.deepseek.com';
+export const DEFAULT_MODEL = 'deepseek-v4-flash';
 
 /** A generate call gets two minutes, then it gives up. */
 export const REQUEST_TIMEOUT_MS = 120_000;
@@ -272,6 +272,10 @@ export function resolveBaseUrl(): string {
   return process.env.OPENAI_BASE_URL?.trim() || DEFAULT_BASE_URL;
 }
 
+export function resolveThinkingMode(): boolean {
+  return process.env.LLM_THINKING_MODE?.trim() === "true" || true;
+}
+
 function requireApiKey(): string {
   const key = process.env.OPENAI_API_KEY?.trim();
   if (!key) {
@@ -375,8 +379,9 @@ export class OpenAiLlm implements Llm {
       // options' `body` override is how provider-specific fields travel.
       // DeepSeek V4 thinks by default, and reasoning tokens can eat the budget
       // and leave `content` empty -- off.
+      const thinkingMode = resolveThinkingMode() ? 'enabled' : 'disabled';
       completion = await client.chat.completions.create(body, {
-        body: { ...body, thinking: { type: 'disabled' } },
+        body: { ...body, thinking: { type: thinkingMode } },
       });
     } catch (error) {
       throw asLlmError(error);
