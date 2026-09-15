@@ -28,6 +28,8 @@ export const INPUT_FILENAME = 'input.txt';
 export const SCRIPT_FILENAME = 'script.json';
 export const SCENES_FILENAME = 'scenes.json';
 export const STATUS_FILENAME = 'status.json';
+/** The worker's stdout/stderr for the most recent job; truncated at job start. */
+export const RENDER_LOG_FILENAME = 'render.log';
 export const OUTPUT_FILENAME = 'out.mp4';
 export const PREVIEW_FILENAME = 'preview.mp4';
 /**

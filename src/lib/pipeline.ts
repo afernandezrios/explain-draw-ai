@@ -28,6 +28,7 @@ import {
   MAX_INPUT_CHARS,
   OUTPUT_FILENAME,
   PREVIEW_FILENAME,
+  RENDER_LOG_FILENAME,
   SCENES_FILENAME,
   SCRIPT_FILENAME,
   STATUS_FILENAME,
@@ -76,6 +77,7 @@ export type ProjectFiles = {
   script: string;
   scenes: string;
   status: string;
+  renderLog: string;
   out: string;
   preview: string;
   clipsDir: string;
@@ -89,6 +91,7 @@ export function projectFiles(id: string): ProjectFiles {
     script: path.join(dir, SCRIPT_FILENAME),
     scenes: path.join(dir, SCENES_FILENAME),
     status: path.join(dir, STATUS_FILENAME),
+    renderLog: path.join(dir, RENDER_LOG_FILENAME),
     out: path.join(dir, OUTPUT_FILENAME),
     preview: path.join(dir, PREVIEW_FILENAME),
     clipsDir: path.join(dir, CLIPS_DIRNAME),
@@ -248,8 +251,23 @@ export function scenesToVideo(options: RenderSpawnOptions): RenderHandles {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
+  // The worker's output is also persisted into the project folder, so a failure
+  // is readable after the fact -- and after a server restart, unlike the
+  // in-memory tail below. Truncated at job start, so the file always describes
+  // the most recent job (previews included).
+  let logStream: fs.WriteStream | null = null;
+  try {
+    logStream = fs.createWriteStream(projectFiles(options.projectId).renderLog);
+    // A full disk or a missing folder surfaces as an 'error' on the stream and
+    // must never take the server down through an unhandled event.
+    logStream.on('error', () => {});
+  } catch {
+    // Best-effort: a render never fails because its log file could not open.
+  }
+
   const log: string[] = [];
   const collect = (chunk: Buffer): void => {
+    logStream?.write(chunk);
     for (const line of chunk.toString().split('\n')) {
       const trimmed = line.trim();
       if (trimmed) {
@@ -265,11 +283,17 @@ export function scenesToVideo(options: RenderSpawnOptions): RenderHandles {
 
   // A failed spawn emits 'error' and never 'exit'; without this listener that
   // error event would be unhandled and take the server down with it.
-  child.on('error', options.onError);
+  child.on('error', (error) => {
+    logStream?.end();
+    options.onError(error);
+  });
   // 'close', not 'exit': 'exit' can fire while the pipes still hold the worker's
   // last lines, and those are exactly the lines a failure report is built from.
   // 'close' waits for the streams, so `logTail()` has the whole story.
-  child.on('close', options.onExit);
+  child.on('close', (code, signal) => {
+    logStream?.end();
+    options.onExit(code, signal);
+  });
 
   return { child, logTail: () => [...log] };
 }

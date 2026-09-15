@@ -31,5 +31,6 @@ export async function POST(request: Request): Promise<NextResponse> {
     script: result.script,
     scenes: result.scenes,
     budget: result.budget,
+    meta: result.meta,
   });
 }

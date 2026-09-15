@@ -17,6 +17,7 @@
  */
 
 import { failure, failureFrom, type ApiFailure } from './http.ts';
+import { logEvent } from './logger.ts';
 import { OpenAiLlm, type Llm, type Script } from './llm.ts';
 import {
   createProject,
@@ -29,11 +30,51 @@ import {
 } from './pipeline.ts';
 import { checkBudget, type BudgetCheck, type Scenes } from './schema.ts';
 
+/** The numbers the UI shows in the success notices. */
+export type GenerateMeta = {
+  /** Wall-clock ms of the script call; null for a rebuild (no script call). */
+  scriptMs: number | null;
+  storyboardMs: number;
+  /** The model name the LLM client used; null when no call was logged (test fake). */
+  model: string | null;
+  /** Aggregated across every call and attempt of this pipeline run. */
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+};
+
 export type GenerateResult =
-  | { ok: true; projectId: string; script: Script; scenes: Scenes; budget: BudgetCheck }
+  | {
+      ok: true;
+      projectId: string;
+      script: Script;
+      scenes: Scenes;
+      budget: BudgetCheck;
+      meta: GenerateMeta;
+    }
   | ApiFailure;
 
-export type StoryboardResult = { ok: true; script: Script; scenes: Scenes; budget: BudgetCheck } | ApiFailure;
+export type StoryboardResult =
+  | { ok: true; script: Script; scenes: Scenes; budget: BudgetCheck; meta: GenerateMeta }
+  | ApiFailure;
+
+/**
+ * Sums the model client's own records. A `FakeLlm` records nothing, so tests
+ * see nulls and zeros on fields they never read.
+ */
+function buildMeta(llm: Llm, scriptMs: number | null, storyboardMs: number): GenerateMeta {
+  const calls = llm.callLog ?? [];
+  const usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  for (const call of calls) {
+    usage.promptTokens += call.usage.promptTokens;
+    usage.completionTokens += call.usage.completionTokens;
+    usage.totalTokens += call.usage.totalTokens;
+  }
+  return {
+    scriptMs,
+    storyboardMs,
+    model: calls.find((call) => call.model !== '')?.model ?? null,
+    usage,
+  };
+}
 
 /**
  * Paste text in, get a project back.
@@ -52,25 +93,51 @@ export async function generateProject(
     return failure(400, 'BAD_INPUT', 'The request needs an "input" string.');
   }
 
+  logEvent('info', { event: 'generate.start', inputChars: input.length });
+
   let projectId: string | null = null;
   try {
     // Validates emptiness and length before the model is called, and before any
     // folder exists.
+    const scriptStarted = Date.now();
     const script = await textToScript(input, llm);
+    const scriptMs = Date.now() - scriptStarted;
+    logEvent('info', { event: 'generate.script.done', scriptMs });
+
     projectId = createProject(input);
     writeScript(projectId, script);
 
+    const scenesStarted = Date.now();
     const scenes = await scriptToScenes(script, llm);
+    const storyboardMs = Date.now() - scenesStarted;
+    logEvent('info', { event: 'generate.storyboard.done', storyboardMs, scenes: scenes.length });
+
     writeScenes(projectId, scenes);
 
-    return { ok: true, projectId, script, scenes, budget: checkBudget(scenes) };
+    logEvent('info', {
+      event: 'generate.done',
+      projectId,
+      scriptMs,
+      storyboardMs,
+      scenes: scenes.length,
+    });
+    return {
+      ok: true,
+      projectId,
+      script,
+      scenes,
+      budget: checkBudget(scenes),
+      meta: buildMeta(llm, scriptMs, storyboardMs),
+    };
   } catch (error) {
     if (projectId) {
       // A folder holding half a project would list as a project with everything
       // missing. Deleted by id, never by parent.
       removeProject(projectId);
     }
-    return failureFrom(error);
+    const result = failureFrom(error);
+    logEvent('error', { event: 'generate.failed', code: result.body.code, error: result.body.error });
+    return result;
   }
 }
 
@@ -87,14 +154,29 @@ export async function regenerateStoryboard(
 ): Promise<StoryboardResult> {
   const script = readScript(id);
   if (script === null) {
-    return failure(404, 'NO_PROJECT', `There is no project ${id}.`);
+    const result = failure(404, 'NO_PROJECT', `There is no project ${id}.`);
+    logEvent('warn', { event: 'storyboard.failed', projectId: id, code: result.body.code });
+    return result;
   }
 
+  logEvent('info', { event: 'storyboard.start', projectId: id });
+
   try {
+    const started = Date.now();
     const scenes = await scriptToScenes(script, llm);
+    const storyboardMs = Date.now() - started;
     writeScenes(id, scenes);
-    return { ok: true, script, scenes, budget: checkBudget(scenes) };
+    logEvent('info', { event: 'storyboard.done', projectId: id, storyboardMs, scenes: scenes.length });
+    return {
+      ok: true,
+      script,
+      scenes,
+      budget: checkBudget(scenes),
+      meta: buildMeta(llm, null, storyboardMs),
+    };
   } catch (error) {
-    return failureFrom(error);
+    const result = failureFrom(error);
+    logEvent('error', { event: 'storyboard.failed', projectId: id, code: result.body.code });
+    return result;
   }
 }

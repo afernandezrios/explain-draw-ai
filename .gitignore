@@ -7,7 +7,7 @@ next-env.d.ts
 # user data and can be many gigabytes; they are not source.
 # Anchored to the repo root on purpose: an unanchored `projects/` also matches
 # src/app/api/projects/ and silently drops the entire API surface from the repo.
-/projects/
+projects
 
 # Secrets. Next.js loads .env, .env.local, .env.development, .env.test,
 # .env.production and their .local variants automatically, so anything that

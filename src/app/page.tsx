@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import type { GenerateMeta } from '../lib/generate.ts';
 import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from '../lib/render-config.ts';
 import { isTerminal, type RenderStatus } from '../lib/render-status.ts';
 import type { BudgetCheck, Scene } from '../lib/schema.ts';
@@ -89,6 +90,62 @@ async function sendJson(
   return { ok: response.ok, data };
 }
 
+/* ─────────────────────── feedback formatting ────────────────────── */
+
+function formatSeconds(ms: number): string {
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+/** The parenthetical the success notices carry: " (script 4.2s, storyboard 61.8s, model, 12,345 tokens)". */
+function metaSuffix(meta: GenerateMeta | undefined): string {
+  if (!meta) {
+    return '';
+  }
+  const parts: string[] = [];
+  if (meta.scriptMs !== null) {
+    parts.push(`script ${formatSeconds(meta.scriptMs)}`);
+  }
+  parts.push(`storyboard ${formatSeconds(meta.storyboardMs)}`);
+  if (meta.model) {
+    parts.push(meta.model);
+  }
+  if (meta.usage.totalTokens > 0) {
+    parts.push(`${meta.usage.totalTokens.toLocaleString()} tokens`);
+  }
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
+}
+
+function formatElapsed(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(total / 60);
+  const seconds = total % 60;
+  return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`;
+}
+
+/**
+ * The worker's output for a failed render, hidden behind a button. Own `open`
+ * state, so a new render or project resets it by unmounting.
+ */
+function RenderLogTail({ lines }: { lines: string[] | null }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div>
+      <button className="ghost" onClick={() => setOpen((current) => !current)}>
+        {open ? 'Hide worker log' : 'Show worker log'}
+      </button>
+      {open && (
+        <pre className="log">
+          {lines === null
+            ? 'No worker output was captured.'
+            : lines.length === 0
+              ? 'The worker produced no output.'
+              : lines.join('\n')}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 /* ─────────────────────────────── page ───────────────────────────── */
 
 export default function HomePage() {
@@ -113,6 +170,8 @@ export default function HomePage() {
   const [starting, setStarting] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [workerGone, setWorkerGone] = useState(false);
+  /** The worker's tail for a failed render: `null` means "could not get it". */
+  const [renderLog, setRenderLog] = useState<string[] | null>(null);
 
   /** Bumped after a job ends so the players reload the new file. */
   const [mediaNonce, setMediaNonce] = useState(0);
@@ -141,6 +200,20 @@ export default function HomePage() {
     window.history.replaceState(null, '', `/?project=${data.projectId}`);
   }, []);
 
+  const loadRenderLog = useCallback(async (id: string): Promise<void> => {
+    try {
+      const { ok, data } = await sendJson(`/api/projects/${id}/render-log`, 'GET');
+      const lines = (data as { lines?: unknown } | null)?.lines;
+      setRenderLog(
+        ok && Array.isArray(lines)
+          ? lines.filter((line): line is string => typeof line === 'string')
+          : null,
+      );
+    } catch {
+      setRenderLog(null);
+    }
+  }, []);
+
   const refreshProject = useCallback(
     async (id: string) => {
       try {
@@ -150,6 +223,10 @@ export default function HomePage() {
           return;
         }
         applyProject(data as ProjectData);
+        // A reload onto an already-failed render still gets the worker log.
+        if ((data as ProjectData).status?.state === 'failed') {
+          void loadRenderLog(id);
+        }
       } catch (thrown) {
         // Called from the poll and from the mount effect, neither of which can
         // do anything with a rejected promise except lose it.
@@ -188,6 +265,7 @@ export default function HomePage() {
         script: ScriptData;
         scenes: Scene[];
         budget: BudgetCheck;
+        meta: GenerateMeta;
       };
       // A brand new project: clear anything left over from the previous one.
       setStatus(null);
@@ -208,7 +286,7 @@ export default function HomePage() {
         renderActive: false,
       });
       setNotice(
-        `Storyboard ready: ${created.scenes.length} scenes. Check the script, then render.`,
+        `Storyboard ready: ${created.scenes.length} scenes${metaSuffix(created.meta)}. Check the script, then render.`,
       );
     } catch (thrown) {
       setError({ error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' });
@@ -265,13 +343,13 @@ export default function HomePage() {
         setError(readError(data));
         return;
       }
-      const rebuilt = data as { scenes: Scene[]; budget: BudgetCheck };
+      const rebuilt = data as { scenes: Scene[]; budget: BudgetCheck; meta: GenerateMeta };
       setScenes(rebuilt.scenes);
       setSceneErrors([]);
       setBudget(rebuilt.budget);
       setSelected(0);
       setSceneNonce((n) => n + 1);
-      setNotice(`Rebuilt the storyboard: ${rebuilt.scenes.length} scenes.`);
+      setNotice(`Rebuilt the storyboard: ${rebuilt.scenes.length} scenes${metaSuffix(rebuilt.meta)}.`);
     } catch (thrown) {
       setError({ error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' });
     } finally {
@@ -291,6 +369,7 @@ export default function HomePage() {
       setNotice(null);
       setWorkerGone(false);
       setCancelling(false);
+      setRenderLog(null);
       // The job we are about to start; anything older is a previous job's
       // outcome and must not be mistaken for this one's.
       jobStartedAtRef.current = Date.now();
@@ -390,6 +469,9 @@ export default function HomePage() {
         // A terminal status from an earlier job is not this job's outcome.
         if (isTerminal(next.state) && next.startedAt >= floor) {
           setStatus(next);
+          if (next.state === 'failed') {
+            void loadRenderLog(projectId);
+          }
           jobStartedAtRef.current = null;
           setMediaNonce((n) => n + 1);
           void refreshProject(projectId);
@@ -405,6 +487,7 @@ export default function HomePage() {
       if (!snapshot.renderActive && (next === null || Date.now() - next.updatedAt > STALE_MS)) {
         setWorkerGone(true);
         setRenderActive(false);
+        void loadRenderLog(projectId);
         void refreshProject(projectId);
         return false;
       }
@@ -435,7 +518,7 @@ export default function HomePage() {
         clearTimeout(timer);
       }
     };
-  }, [projectId, renderActive, status?.state, refreshProject]);
+  }, [projectId, renderActive, status?.state, refreshProject, loadRenderLog]);
 
   /* ────────────────────────────── derived ─────────────────────────── */
 
@@ -478,6 +561,7 @@ export default function HomePage() {
         <div className="banner warn">
           The render worker is no longer running and never reported an outcome. Check the terminal
           you started the server in. Finished scene clips are kept in the project folder.
+          <RenderLogTail lines={renderLog} />
         </div>
       )}
 
@@ -688,6 +772,9 @@ export default function HomePage() {
               </button>
             )}
             {status?.message && <span className="meta">{status.message}</span>}
+            {running && status && (
+              <span className="meta">Elapsed {formatElapsed(Date.now() - status.startedAt)}</span>
+            )}
           </div>
 
           {(running || (status && status.mode === 'full' && status.totalScenes > 0)) && (
@@ -736,6 +823,7 @@ export default function HomePage() {
                 : status.state === 'cancelled'
                   ? 'Render cancelled.'
                   : `Render failed: ${status.message ?? 'see the terminal for details'}`}
+              {status.state === 'failed' && <RenderLogTail lines={renderLog} />}
             </div>
           )}
 

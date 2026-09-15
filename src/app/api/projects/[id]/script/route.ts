@@ -98,5 +98,5 @@ export async function POST(_request: Request, { params }: Params): Promise<NextR
   if (!result.ok) {
     return NextResponse.json(result.body, { status: result.status });
   }
-  return NextResponse.json({ scenes: result.scenes, budget: result.budget });
+  return NextResponse.json({ scenes: result.scenes, budget: result.budget, meta: result.meta });
 }

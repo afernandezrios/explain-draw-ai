@@ -20,6 +20,7 @@ import type {
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { FAKE_SCRIPT, fakeScenes } from './fixtures.ts';
+import { logEvent } from './logger.ts';
 import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from './render-config.ts';
 import type { Script } from './types.ts';
 import {
@@ -58,6 +59,11 @@ export interface Llm {
    * back to the model with the validator's complaints before it gives up.
    */
   generateScenes(script: Script): Promise<Scenes>;
+  /**
+   * Per-call records written by the real client, read by `generate.ts` for the
+   * numbers the UI shows. Optional so the test fake implements nothing extra.
+   */
+  readonly callLog?: readonly LlmCallMeta[];
 }
 
 export type LlmErrorKind = 'missing-key' | 'invalid-output' | 'request-failed';
@@ -74,6 +80,34 @@ export class LlmError extends Error {
     this.details = details;
   }
 }
+
+/* ────────────────────────── call metadata ───────────────────────── */
+
+/** `json_schema` is the strict structured-outputs mode; `json_object` the fallback. */
+export type LlmCallMode = 'json_schema' | 'json_object';
+
+export type LlmCallOutcome = 'ok' | 'fallback' | 'invalid-output' | 'request-failed' | 'missing-key';
+
+/**
+ * What one logical model call cost. The strict request and its plain-JSON
+ * fallback are two entries (mode tells them apart); a `fallback` entry carries
+ * zero usage because the provider rejected the strict request without an
+ * answer, so the fallback's usage is the traffic that actually happened.
+ */
+export type LlmCallMeta = {
+  label: 'script' | 'storyboard';
+  model: string;
+  mode: LlmCallMode;
+  /** 1-based storyboard attempt (the repair loop); always 1 for the script. */
+  attempt: number;
+  durationMs: number;
+  outcome: LlmCallOutcome;
+  usage: { promptTokens: number; completionTokens: number; totalTokens: number };
+};
+
+export type LlmCallUsage = LlmCallMeta['usage'];
+
+const EMPTY_USAGE: LlmCallUsage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
 /* ──────────────────────────── prompts ───────────────────────────── */
 
@@ -297,8 +331,36 @@ function describeApiError(error: unknown): string {
   return 'The model request failed.';
 }
 
+/** The usage the provider reported; zeros when it reported nothing. */
+function usageOf(completion: ChatCompletion): LlmCallUsage {
+  const usage = completion.usage;
+  return {
+    promptTokens: usage?.prompt_tokens ?? 0,
+    completionTokens: usage?.completion_tokens ?? 0,
+    totalTokens: usage?.total_tokens ?? 0,
+  };
+}
+
+/**
+ * The model's reply, cut to what a log line can carry. The strict path has no
+ * raw `content` to excerpt from, so its parsed payload stands in.
+ */
+function responsePreview(completion: ChatCompletion, parsedFallback?: unknown): string {
+  const content = completion.choices[0]?.message?.content;
+  const text =
+    typeof content === 'string'
+      ? content
+      : parsedFallback === undefined
+        ? ''
+        : JSON.stringify(parsedFallback);
+  return text.slice(0, 1000);
+}
+
 export class OpenAiLlm implements Llm {
   private client: OpenAI | null = null;
+
+  /** Every logical call this instance made; the test fake never writes these. */
+  readonly callLog: LlmCallMeta[] = [];
 
   private getClient(): OpenAI {
     if (!this.client) {
@@ -310,6 +372,30 @@ export class OpenAiLlm implements Llm {
       });
     }
     return this.client;
+  }
+
+  /**
+   * The one place a call's outcome is recorded: into this instance's `callLog`
+   * (where `generate.ts` reads the numbers the UI shows) and into the log.
+   * Purely observational -- callers decide what to throw.
+   */
+  private recordEnd(
+    base: { label: 'script' | 'storyboard'; model: string; mode: LlmCallMode; attempt: number },
+    started: number,
+    outcome: LlmCallOutcome,
+    usage: LlmCallUsage,
+    extra?: { errorMessage?: string; details?: string[]; responsePreview?: string },
+  ): void {
+    const entry: LlmCallMeta = { ...base, durationMs: Date.now() - started, outcome, usage };
+    this.callLog.push(entry);
+    logEvent(outcome === 'ok' || outcome === 'fallback' ? 'info' : 'error', {
+      event: 'llm.response',
+      ...base,
+      durationMs: entry.durationMs,
+      outcome,
+      usage,
+      ...extra,
+    });
   }
 
   /**
@@ -325,32 +411,94 @@ export class OpenAiLlm implements Llm {
     envelope: z.ZodType<E>,
     /** Appended after the fallback's schema blob, where the model reads last. */
     trailing = '',
+    /** Which storyboard attempt this is; the script call is always 1. */
+    attempt = 1,
   ): Promise<E> {
     // Outside the try, so a missing key is still reported before any request.
-    const client = this.getClient();
+    let client: OpenAI;
+    try {
+      client = this.getClient();
+    } catch (error) {
+      if (error instanceof LlmError && error.kind === 'missing-key') {
+        logEvent('error', {
+          event: 'llm.error',
+          label,
+          model: resolveModel(),
+          mode: 'json_schema',
+          attempt,
+          durationMs: 0,
+          errorKind: 'missing-key',
+          errorMessage: error.message,
+        });
+      }
+      throw error;
+    }
+    const model = resolveModel();
+    const started = Date.now();
+    logEvent('info', {
+      event: 'llm.request',
+      label,
+      model,
+      mode: 'json_schema',
+      attempt,
+      system: system + trailing,
+      user,
+    });
     const messages: ChatCompletionMessageParam[] = [
       { role: 'system', content: system + trailing },
       { role: 'user', content: user },
     ];
+    const base = { label, model, mode: 'json_schema' as const, attempt };
+    // Set by the two throw sites below, so the catch does not record their
+    // outcome twice.
+    let recorded = false;
     try {
       const completion = await client.chat.completions.parse({
-        model: resolveModel(),
+        model,
         messages,
         response_format: format,
       });
       const message = completion.choices[0]?.message;
       if (message?.refusal) {
+        this.recordEnd(base, started, 'invalid-output', usageOf(completion), {
+          errorMessage: `The model refused: ${message.refusal}`,
+          responsePreview: responsePreview(completion),
+        });
+        recorded = true;
         throw new LlmError('invalid-output', `The model refused: ${message.refusal}`);
       }
       if (!message?.parsed) {
+        this.recordEnd(base, started, 'invalid-output', usageOf(completion), {
+          errorMessage: `The model returned no ${label}.`,
+          responsePreview: responsePreview(completion),
+        });
+        recorded = true;
         throw new LlmError('invalid-output', `The model returned no ${label}.`);
       }
+      this.recordEnd(base, started, 'ok', usageOf(completion), {
+        responsePreview: responsePreview(completion, message.parsed),
+      });
       return message.parsed;
     } catch (error) {
       if (isUnsupportedStructuredFormat(error)) {
-        return this.requestPlainJson(client, system, user, label, format, envelope, trailing);
+        // The downgrade itself is logged: the strict attempt ends here, and the
+        // fallback call below logs its own request and response lines.
+        this.recordEnd(base, started, 'fallback', EMPTY_USAGE, {
+          errorMessage: error.message,
+        });
+        return this.requestPlainJson(client, system, user, label, format, envelope, trailing, attempt);
       }
-      throw asLlmError(error);
+      const llmError = asLlmError(error);
+      if (!recorded) {
+        this.recordEnd(
+          base,
+          started,
+          llmError.kind === 'invalid-output' ? 'invalid-output' : 'request-failed',
+          EMPTY_USAGE,
+          { errorMessage: llmError.message, details: llmError.details },
+        );
+      }
+      throw llmError;
     }
   }
 
@@ -363,6 +511,7 @@ export class OpenAiLlm implements Llm {
     format: EnvelopeFormat<E>,
     envelope: z.ZodType<E>,
     trailing: string,
+    attempt = 1,
   ): Promise<E> {
     const body: ChatCompletionCreateParamsNonStreaming = {
       model: resolveModel(),
@@ -373,6 +522,18 @@ export class OpenAiLlm implements Llm {
       response_format: JSON_OBJECT_FORMAT,
       max_tokens: FALLBACK_MAX_TOKENS,
     };
+    const model = resolveModel();
+    const started = Date.now();
+    logEvent('info', {
+      event: 'llm.request',
+      label,
+      model,
+      mode: 'json_object',
+      attempt,
+      system: system + schemaInstruction(format) + trailing,
+      user,
+    });
+    const base = { label, model, mode: 'json_object' as const, attempt };
     let completion: ChatCompletion;
     try {
       // The JS SDK has no `extra_body` (that is the Python client); the request
@@ -384,18 +545,40 @@ export class OpenAiLlm implements Llm {
         body: { ...body, thinking: { type: thinkingMode } },
       });
     } catch (error) {
-      throw asLlmError(error);
+      const llmError = asLlmError(error);
+      // The SDK's own retry (maxRetries) is invisible here: one line covers the
+      // whole logical attempt, however many HTTP requests it took.
+      this.recordEnd(
+        base,
+        started,
+        llmError.kind === 'invalid-output' ? 'invalid-output' : 'request-failed',
+        EMPTY_USAGE,
+        { errorMessage: llmError.message, details: llmError.details },
+      );
+      throw llmError;
     }
 
     const choice = completion.choices[0];
     const message = choice?.message;
     if (message?.refusal) {
+      this.recordEnd(base, started, 'invalid-output', usageOf(completion), {
+        errorMessage: `The model refused: ${message.refusal}`,
+        responsePreview: responsePreview(completion),
+      });
       throw new LlmError('invalid-output', `The model refused: ${message.refusal}`);
     }
     if (choice?.finish_reason === 'length') {
+      this.recordEnd(base, started, 'invalid-output', usageOf(completion), {
+        errorMessage: `The model ran out of tokens writing the ${label}.`,
+        responsePreview: responsePreview(completion),
+      });
       throw new LlmError('invalid-output', `The model ran out of tokens writing the ${label}.`);
     }
     if (!message?.content || message.content.trim() === '') {
+      this.recordEnd(base, started, 'invalid-output', usageOf(completion), {
+        errorMessage: `The model returned no ${label}.`,
+        responsePreview: responsePreview(completion),
+      });
       throw new LlmError('invalid-output', `The model returned no ${label}.`);
     }
 
@@ -403,17 +586,30 @@ export class OpenAiLlm implements Llm {
     try {
       json = parseJsonContent(message.content);
     } catch {
+      this.recordEnd(base, started, 'invalid-output', usageOf(completion), {
+        errorMessage: `The model returned a ${label} that is not valid JSON.`,
+        responsePreview: responsePreview(completion),
+      });
       throw new LlmError('invalid-output', `The model returned a ${label} that is not valid JSON.`);
     }
 
     const parsed = envelope.safeParse(json);
     if (!parsed.success) {
+      const details = zodIssueDetails(parsed.error);
+      this.recordEnd(base, started, 'invalid-output', usageOf(completion), {
+        errorMessage: `The model returned a ${label} that does not match the expected format.`,
+        details,
+        responsePreview: responsePreview(completion),
+      });
       throw new LlmError(
         'invalid-output',
         `The model returned a ${label} that does not match the expected format.`,
-        zodIssueDetails(parsed.error),
+        details,
       );
     }
+    this.recordEnd(base, started, 'ok', usageOf(completion), {
+      responsePreview: responsePreview(completion),
+    });
     return parsed.data;
   }
 
@@ -440,6 +636,7 @@ export class OpenAiLlm implements Llm {
         scenesResponseFormat(),
         ScenesEnvelopeSchema,
         storyboardCapsReminder(),
+        attempt,
       );
 
       // Scenes travel wrapped so the JSON Schema root can be an object; unwrap
@@ -449,12 +646,26 @@ export class OpenAiLlm implements Llm {
         return validation.scenes;
       }
       if (attempt >= MAX_STORYBOARD_ATTEMPTS) {
+        // The model answered and was paid for it; the rejection is on our side.
+        const lastCall = this.callLog.at(-1);
+        logEvent('error', {
+          event: 'llm.error',
+          label: 'storyboard',
+          model: lastCall?.model ?? resolveModel(),
+          mode: lastCall?.mode ?? 'json_schema',
+          attempt,
+          durationMs: lastCall?.durationMs ?? 0,
+          errorKind: 'invalid-output',
+          errorMessage: 'The model returned a storyboard that does not match the scene format.',
+          details: validation.errors,
+        });
         throw new LlmError(
           'invalid-output',
           'The model returned a storyboard that does not match the scene format.',
           validation.errors,
         );
       }
+      logEvent('warn', { event: 'storyboard.rejected', attempt, errors: validation.errors });
       // The repair carries the same title and script, plus what the validator
       // said about specific scenes.
       user = request + repairInstruction(validation.errors);
