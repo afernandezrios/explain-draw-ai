@@ -534,7 +534,7 @@ async function measureMaxVolumeDb(file: string): Promise<number> {
     'null',
     '-',
   ]);
-  const reported = /max_volume:\s*(-?inf|[\d.]+)\s*dB/.exec(stderr)?.[1];
+  const reported = /max_volume:\s*(-?(?:inf|[\d.]+))\s*dB/.exec(stderr)?.[1];
   if (reported === undefined) {
     throw new Error(
       `refusing to render: ffmpeg could not measure the volume of ${file} -- the file has audio the ` +
