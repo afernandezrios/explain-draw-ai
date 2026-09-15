@@ -39,12 +39,22 @@ import {
 } from '@remotion/renderer';
 import { readJsonFile, writeJsonAtomic } from '../src/lib/atomic.ts';
 import {
+  AUDIO_BITRATE,
+  AUDIO_CODEC,
+  AUDIO_SILENCE_MAX_VOLUME_DB,
   CLIPS_DIRNAME,
   CRF,
+  DEFAULT_PIPER_MODELS_DIR,
+  DEFAULT_PIPER_VOICE,
+  FPS,
   IMAGE_FORMAT,
   LOCK_FILENAME,
   MAX_FRAME_CONCURRENCY,
+  NARRATION_DIRNAME,
+  NARRATION_OVERRUN_TOLERANCE_SECONDS,
   OUTPUT_FILENAME,
+  PIPER_MODELS_DIR_ENV,
+  PIPER_VOICE_ENV,
   PIXEL_FORMAT,
   PREVIEW_CLIP_FILENAME,
   PREVIEW_FILENAME,
@@ -52,7 +62,9 @@ import {
   STATUS_FILENAME,
   VIDEO_CODEC,
   X264_PRESET,
+  narrationFileName,
   sceneClipName,
+  secondsToFrames,
 } from '../src/lib/render-config.ts';
 import { claimLock, releaseLockIfOwnedBy, type RenderLock } from '../src/lib/render-lock.ts';
 import type { RenderMode, RenderStatus } from '../src/lib/render-status.ts';
@@ -181,13 +193,20 @@ const { cancelSignal, cancel } = makeCancelSignal();
 let cancelled = false;
 /** ffmpeg during the join, so a cancel does not have to wait for the whole concat. */
 let ffmpegChild: ChildProcess | null = null;
+/** piper during narration synthesis, so cancel does not have to wait for the voice. */
+let piperChild: ChildProcess | null = null;
 
 function requestCancel(): void {
   cancelled = true;
   cancel();
-  if (ffmpegChild) {
+  // Both children are killed and then awaited by their own callers, so a cancel
+  // never leaves a half-written WAV or join behind.
+  for (const child of [ffmpegChild, piperChild]) {
+    if (!child) {
+      continue;
+    }
     try {
-      ffmpegChild.kill('SIGTERM');
+      child.kill('SIGTERM');
     } catch {
       // Already gone; the exit handler still runs.
     }
@@ -244,8 +263,12 @@ function tempTarget(finalPath: string): string {
 /**
  * Runs ffmpeg, keeping stderr for diagnostics, never leaving a pipe unread, and
  * letting cancel reach the child.
+ *
+ * Resolves with the stderr it collected: ffmpeg reports to stderr, so the
+ * filters whose whole output is a measurement (`volumedetect`, below) are read
+ * from here rather than from a second spawn.
  */
-function runFfmpeg(args: string[]): Promise<void> {
+function runFfmpeg(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] });
     ffmpegChild = child;
@@ -263,7 +286,7 @@ function runFfmpeg(args: string[]): Promise<void> {
     child.on('close', (code) => {
       ffmpegChild = null;
       if (code === 0) {
-        resolve();
+        resolve(stderr);
       } else {
         reject(new Error(`ffmpeg exited with code ${code}: ${stderr.slice(-600).trim()}`));
       }
@@ -278,8 +301,18 @@ function runFfmpeg(args: string[]): Promise<void> {
  * The join goes to a temp file and is renamed into place, so the concat list is
  * cleaned up either way, a cancelled join leaves no out.mp4, and a player that
  * is already reading the previous out.mp4 keeps a whole file.
+ *
+ * `verify` is the caller's last look at the joined file while it is still the
+ * temp one: running it here rather than after the rename is the difference
+ * between refusing a bad join and publishing it. A rejected verify takes the
+ * temp down with the rest of the `finally`, so out.mp4 keeps whatever the
+ * previous render left there.
  */
-async function concatClips(clipFiles: string[], outPath: string): Promise<void> {
+async function concatClips(
+  clipFiles: string[],
+  outPath: string,
+  verify: (tempPath: string) => Promise<void>,
+): Promise<void> {
   const listPath = path.join(path.dirname(outPath), 'concat.txt');
   const tempOut = tempTarget(outPath);
   const body = clipFiles.map((file) => `file '${file.replace(/'/g, "'\\''")}'`).join('\n');
@@ -307,11 +340,342 @@ async function concatClips(clipFiles: string[], outPath: string): Promise<void> 
     if (cancelled) {
       throw new CancelledError('cancelled during the join');
     }
+    await verify(tempOut);
     fs.renameSync(tempOut, outPath);
   } finally {
     fs.rmSync(listPath, { force: true });
     fs.rmSync(tempOut, { force: true });
   }
+}
+
+/* ──────────────────────────── narration ─────────────────────────── */
+
+const PIPER_INSTALL_HINT =
+  'Piper speaks the narration. Install it with `python3 -m pip install piper-tts`, put its command on PATH, and download a voice (see the README prerequisites).';
+
+/**
+ * Where piper finds its voice: the model file, and the directory it is resolved
+ * from.
+ *
+ * `PIPER_MODELS_DIR` names the directory the voice lives in; unset, voices live
+ * in the repo's `models/`. Both the configured value and the default are
+ * resolved against the worker's own root rather than the working directory, so
+ * the same setting and the same render find the same voice from anywhere --
+ * `PIPER_MODELS_DIR=models` means the repo's `models/`, not a `models/` beside
+ * whatever folder the render was started from.
+ *
+ * The model path is always passed to piper absolute, so piper needs no
+ * data-dir flag to look the voice up -- naming the file means the voice is
+ * exactly the configured one and never a stray `.onnx` that happens to sit in
+ * the working directory.
+ */
+function piperConfig(): { voice: string; modelPath: string } {
+  const voice = process.env[PIPER_VOICE_ENV]?.trim() || DEFAULT_PIPER_VOICE;
+  const configured = process.env[PIPER_MODELS_DIR_ENV]?.trim();
+  const modelsDir = configured
+    ? path.resolve(PROJECT_ROOT, configured)
+    : path.join(PROJECT_ROOT, DEFAULT_PIPER_MODELS_DIR);
+  return { voice, modelPath: path.join(modelsDir, `${voice}.onnx`) };
+}
+
+/**
+ * Speaks one narration into `outputPath` with piper, text as the positional
+ * argument after `--` -- the invocation piper's own docs show (`piper -m
+ * voice.onnx -f out.wav -- 'text'`), so the voice, the output and the words can
+ * never be confused with a flag, and the text needs no shell.
+ *
+ * Synthesis is local and offline: piper is spawned, never imported or bundled,
+ * and the child is tracked so a cancel reaches it the way it reaches ffmpeg.
+ * Missing piper (ENOENT) and a missing or unusable voice both come back as
+ * errors that name what to install; there is no silent fallback.
+ */
+function runPiper(options: { text: string; outputPath: string }): Promise<void> {
+  const { voice, modelPath } = piperConfig();
+  return new Promise((resolve, reject) => {
+    const child = spawn(
+      'piper',
+      ['-m', modelPath, '-f', options.outputPath, '--', options.text],
+      { stdio: ['ignore', 'ignore', 'pipe'] },
+    );
+    piperChild = child;
+    let stderr = '';
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+      if (stderr.length > 8000) {
+        stderr = stderr.slice(-8000);
+      }
+    });
+    child.on('error', (error) => {
+      piperChild = null;
+      reject(new Error(`piper could not start: ${error.message}. ${PIPER_INSTALL_HINT}`));
+    });
+    child.on('close', (code) => {
+      piperChild = null;
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(
+          new Error(
+            `piper exited with code ${code} speaking the voice "${voice}" from ${modelPath}: ${stderr.slice(-600).trim()} ${PIPER_INSTALL_HINT}`,
+          ),
+        );
+      }
+    });
+  });
+}
+
+/** Runs ffprobe and returns its stdout, or throws with the reason it could not. */
+function runFfprobe(args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = spawn('ffprobe', args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
+    let stderr = '';
+    child.stdout?.on('data', (chunk: Buffer) => {
+      stdout += chunk.toString();
+    });
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr += chunk.toString();
+    });
+    child.on('error', (error) => {
+      reject(new Error(`ffprobe could not start: ${error.message}`));
+    });
+    child.on('close', (code) => {
+      if (code === 0) {
+        resolve(stdout);
+      } else {
+        reject(new Error(`ffprobe exited with code ${code}: ${stderr.slice(-600).trim()}`));
+      }
+    });
+  });
+}
+
+type FfprobeJson = {
+  streams?: { index?: number; duration?: string }[];
+  format?: { duration?: string };
+};
+
+function parseFfprobeJson(stdout: string, file: string): FfprobeJson {
+  try {
+    return JSON.parse(stdout) as FfprobeJson;
+  } catch {
+    throw new Error(`ffprobe returned output this worker could not read for ${file}`);
+  }
+}
+
+/** A duration ffprobe printed, or null when it printed nothing usable. */
+function parsedSeconds(value: string | undefined): number | null {
+  const seconds = Number.parseFloat(value ?? '');
+  return Number.isFinite(seconds) ? seconds : null;
+}
+
+/** A media file's duration in seconds, as ffprobe measures it. */
+async function probeSeconds(file: string): Promise<number> {
+  const stdout = await runFfprobe([
+    '-v',
+    'error',
+    '-select_streams',
+    'a:0',
+    '-show_entries',
+    'stream=duration:format=duration',
+    '-of',
+    'json',
+    file,
+  ]);
+  const parsed = parseFfprobeJson(stdout, file);
+  // ffprobe prints "N/A" for a duration it cannot measure -- an AAC stream in a
+  // container that only carries the total, for instance -- and parseFloat turns
+  // that into NaN rather than into an error. A stream duration that is missing
+  // or unmeasurable is not a duration, so the container's own total stands in
+  // for it; only when neither can be read does the file have none to give.
+  const seconds =
+    parsedSeconds(parsed.streams?.[0]?.duration) ?? parsedSeconds(parsed.format?.duration);
+  if (seconds === null) {
+    throw new Error(`ffprobe found no duration in ${file}`);
+  }
+  return seconds;
+}
+
+/** How many audio streams the file carries. */
+async function countAudioStreams(file: string): Promise<number> {
+  const stdout = await runFfprobe([
+    '-v',
+    'error',
+    '-select_streams',
+    'a',
+    '-show_entries',
+    'stream=index',
+    '-of',
+    'json',
+    file,
+  ]);
+  return parseFfprobeJson(stdout, file).streams?.length ?? 0;
+}
+
+/**
+ * The loudest sample in the file's audio, in dB, as ffmpeg's `volumedetect`
+ * measures it. Digital silence has no loudest sample at all, which ffmpeg
+ * reports as `-inf`; that is parsed to `-Infinity` so it compares as the
+ * quietest possible reading rather than as a failure to measure.
+ *
+ * `-f null -` writes the decoded audio nowhere -- the filter's real output is
+ * the report on stderr, which is why `runFfmpeg` hands its stderr back. `-vn`
+ * keeps the measurement to the audio: without it ffmpeg would decode every
+ * frame of a five minute video to throw it away.
+ */
+async function measureMaxVolumeDb(file: string): Promise<number> {
+  const stderr = await runFfmpeg([
+    '-hide_banner',
+    '-i',
+    file,
+    '-vn',
+    '-af',
+    'volumedetect',
+    '-f',
+    'null',
+    '-',
+  ]);
+  const reported = /max_volume:\s*(-?inf|[\d.]+)\s*dB/.exec(stderr)?.[1];
+  if (reported === undefined) {
+    throw new Error(
+      `refusing to render: ffmpeg could not measure the volume of ${file} -- the file has audio the ` +
+        `worker cannot read: ${stderr.slice(-600).trim()}`,
+    );
+  }
+  return reported === '-inf' ? Number.NEGATIVE_INFINITY : Number.parseFloat(reported);
+}
+
+/**
+ * Refuses a file whose audio track is missing or silent.
+ *
+ * The `-c copy` join passes each clip's audio through untouched, so a clip with
+ * no audio stream would join into a silently mute video and a clip with two
+ * would join into something no player expects.
+ *
+ * The stream count alone is not enough to rule out silence: the render asks for
+ * an audio track unconditionally, so a clip whose narration never played still
+ * comes back with a stream -- of silence, as long as the scene. That is the
+ * failure this checks for, and it is why the count is followed by a
+ * measurement rather than trusted. Both are refusals, checked before the join
+ * (and, for the join itself, before it is renamed into place) rather than
+ * discovered by whoever watches the result.
+ */
+async function requireAudibleTrack(file: string, what: string): Promise<void> {
+  const count = await countAudioStreams(file);
+  if (count !== 1) {
+    throw new Error(`refusing to render: ${what} carries ${count} audio streams, not one (${file})`);
+  }
+  const maxDb = await measureMaxVolumeDb(file);
+  if (maxDb <= AUDIO_SILENCE_MAX_VOLUME_DB) {
+    throw new Error(
+      `refusing to render: ${what} is silent -- its loudest sample is ` +
+        `${Number.isFinite(maxDb) ? `${maxDb.toFixed(1)} dB` : '-inf dB'}, at or below the ` +
+        `${AUDIO_SILENCE_MAX_VOLUME_DB} dB floor (${file}). The narration did not reach the clip.`,
+    );
+  }
+}
+
+/**
+ * Synthesizes one scene's narration, and refuses one that does not fit.
+ *
+ * The WAV is written to a temp name and only renamed into place once it has
+ * passed the gate, so a refused or cancelled synthesis leaves whatever the
+ * previous render put there -- never a torn WAV -- and every temp is removed on
+ * the way out. An existing WAV is never reused: the storyboard may have been
+ * rebuilt since it was written, and stale audio under a new script is worse than
+ * none at all.
+ *
+ * The gate: the WAV's own duration against the scene's frame-rounded length plus
+ * `NARRATION_OVERRUN_TOLERANCE_SECONDS`. The voice is never sped up or slowed
+ * down to fit, so a narration longer than its scene is refused here and the
+ * render stops -- before anything is bundled or drawn -- naming the scene and
+ * both durations, rather than being truncated or rushed to fit.
+ */
+async function synthesizeNarration(options: {
+  scene: Scene;
+  index: number;
+  narrationDir: string;
+}): Promise<void> {
+  const { scene, index, narrationDir } = options;
+  const finalPath = path.join(narrationDir, narrationFileName(index));
+  const tempPath = `${finalPath}.tmp`;
+  const budgetSeconds = secondsToFrames(scene.durationSeconds) / FPS;
+
+  try {
+    // One argument, one breath: whitespace collapses to single spaces, so a
+    // narration with a break in it is spoken as one unbroken line.
+    await runPiper({ text: scene.narration.replace(/\s+/g, ' ').trim(), outputPath: tempPath });
+    if (cancelled) {
+      throw new CancelledError(`cancelled while narrating scene ${index + 1}`);
+    }
+
+    const seconds = await probeSeconds(tempPath);
+    if (seconds > budgetSeconds + NARRATION_OVERRUN_TOLERANCE_SECONDS) {
+      // The tolerance is one frame exactly, so it is printed to two places
+      // rather than as 0.041666666666666664.
+      throw new Error(
+        `refusing to render: scene ${index + 1} narration runs ${seconds.toFixed(2)}s, over the scene's ` +
+          `${scene.durationSeconds}s (${budgetSeconds.toFixed(2)}s of frames plus ` +
+          `${NARRATION_OVERRUN_TOLERANCE_SECONDS.toFixed(2)}s of rounding slack). The voice is never sped ` +
+          "up to fit: shorten that scene's narration and rebuild the storyboard.",
+      );
+    }
+
+    fs.renameSync(tempPath, finalPath);
+  } finally {
+    // No-op after a successful rename; the cleanup for a refused, failed or
+    // cancelled WAV, so no `.wav.tmp` outlives the run.
+    fs.rmSync(tempPath, { force: true });
+  }
+}
+
+/**
+ * The pre-flight synthesis stage: every narration this job needs, before
+ * anything is bundled or drawn.
+ *
+ * Unconditional by design -- a full render synthesizes all scenes, a preview
+ * only the scene it draws, and neither reuses a WAV already on disk. Running
+ * before `bundle()` means an overrun stops the render before a single frame is
+ * encoded, and the bundle then serves the very files the composition plays.
+ *
+ * Returns the directory the bundle takes as its public directory.
+ */
+async function synthesizeNarrations(options: {
+  projectDir: string;
+  scenes: Scene[];
+  /** Storyboard indices this job renders: every scene, or just the preview's. */
+  indices: number[];
+}): Promise<string> {
+  const narrationDir = path.join(options.projectDir, NARRATION_DIRNAME);
+  fs.mkdirSync(narrationDir, { recursive: true });
+  writeStatus({ message: 'Preparing narration...' }, true);
+  process.stdout.write(
+    `[render] synthesizing narration for ${options.indices.length} scene${
+      options.indices.length === 1 ? '' : 's'
+    }\n`,
+  );
+
+  for (const index of options.indices) {
+    abortIfCancelled('narration synthesis');
+    // Written per scene, before the voice starts: one static message for the
+    // whole stage would leave the UI showing the first scene at 0% for the
+    // minutes a full storyboard takes to speak. The terms match the render
+    // stage's -- the storyboard index for `sceneIndex`, and progress over the
+    // whole job -- so the two stages read as one run.
+    writeStatus(
+      {
+        sceneIndex: index,
+        message:
+          options.indices.length > 1
+            ? `Narrating scene ${index + 1} of ${options.scenes.length}...`
+            : `Narrating scene ${index + 1}...`,
+        progress: overallProgress(index, 0, options.scenes.length),
+      },
+      true,
+    );
+    await synthesizeNarration({ scene: options.scenes[index], index, narrationDir });
+  }
+
+  return narrationDir;
 }
 
 /* ─────────────────────────────── main ───────────────────────────── */
@@ -328,7 +692,17 @@ async function renderScene(options: {
   jobProgress: (sceneProgress: number) => number;
 }): Promise<void> {
   const { serveUrl, scene, index, totalScenes, completedScenes, outputPath, jobProgress } = options;
-  const inputProps = { scene, sceneIndex: index, totalScenes };
+  // The narration was synthesized before the bundle, and the bundle serves the
+  // narration directory as its public directory, so the composition names the
+  // file the way `staticFile` resolves it. One inputProps object reaches both
+  // `selectComposition` and `renderMedia`: the duration the composition is
+  // selected with and the one it is rendered with can never disagree.
+  const inputProps = {
+    scene,
+    sceneIndex: index,
+    totalScenes,
+    narrationPath: narrationFileName(index),
+  };
   const composition = await selectComposition({
     serveUrl,
     id: COMPOSITION_ID,
@@ -364,7 +738,21 @@ async function renderScene(options: {
       x264Preset: X264_PRESET,
       imageFormat: IMAGE_FORMAT,
       concurrency: MAX_FRAME_CONCURRENCY,
-      muted: true,
+      // The scene's narration is this clip's audio track, so the render is
+      // unmuted; `enforceAudioTrack` guarantees the stream is there even if the
+      // composition played nothing, which is what the `-c copy` join needs. The
+      // audio settings are pinned with the video ones in render-config.ts.
+      muted: false,
+      enforceAudioTrack: true,
+      audioCodec: AUDIO_CODEC,
+      audioBitrate: AUDIO_BITRATE,
+      // Trims each clip's audio to the nearest AAC frame. Remotion documents why
+      // in the option's own description: it "is required for seamless
+      // concatenation of AAC files". An AAC frame is a fixed 1024 samples, so a
+      // track that ends mid-frame leaves a partial frame at the join; every scene
+      // then starts a frame or so late, and over a ~40-scene video the narration
+      // drifts visibly behind the drawing. This is what makes the join honest.
+      forSeamlessAacConcatenation: true,
       overwrite: true,
       logLevel: 'error',
       cancelSignal,
@@ -500,8 +888,24 @@ async function main(argv: string[]): Promise<number> {
     await ensureBrowser({ logLevel: 'error' });
     abortIfCancelled('browser start-up');
 
+    // Pre-flight narration, before anything is bundled or drawn: every scene
+    // for a full render, the previewed scene for a preview, none of it reused --
+    // a stale WAV under a rebuilt storyboard is worse than none. The narration
+    // directory becomes the bundle's public directory, so the composition's
+    // `staticFile` names resolve to the WAVs just written.
+    const narrationDir = await synthesizeNarrations({
+      projectDir: args.projectDir,
+      scenes,
+      indices: previewing ? [args.scene as number] : scenes.map((_, index) => index),
+    });
+    abortIfCancelled('narration synthesis');
+
     process.stdout.write('[render] bundling the composition\n');
-    const serveUrl = await bundle(ENTRY_POINT);
+    // The narration directory -- not the project folder -- is the bundle's
+    // public directory: it is the smallest directory `staticFile` needs, and the
+    // project folder beside it holds hundreds of megabytes of clips. The bundler
+    // copies it in, so what the composition plays is what was just synthesized.
+    const serveUrl = await bundle({ entryPoint: ENTRY_POINT, publicDir: narrationDir });
     abortIfCancelled('bundling');
 
     if (previewing) {
@@ -524,6 +928,11 @@ async function main(argv: string[]): Promise<number> {
           // scene's own: an index over one total would read 100% immediately.
           jobProgress: (sceneProgress) => sceneProgress,
         });
+        // Checked while it is still preview-clip.mp4: a preview clip is a clip
+        // like any other and must carry its narration, and refusing after the
+        // rename would have destroyed the previous, good preview.mp4 on the way
+        // to reporting the problem.
+        await requireAudibleTrack(clipPath, 'the preview clip');
         fs.renameSync(clipPath, previewPath);
         writeStatus({ renderedScenes: 1 }, true);
       } finally {
@@ -548,6 +957,10 @@ async function main(argv: string[]): Promise<number> {
         outputPath: clip,
         jobProgress: (sceneProgress) => overallProgress(index, sceneProgress, scenes.length),
       });
+      // Checked before the clip joins the list: the join is `-c copy`, so a clip
+      // that lost its narration -- a missing stream, or a track of pure silence
+      // -- would ship a video that is mute for that scene's whole length.
+      await requireAudibleTrack(clip, `the clip for scene ${index + 1}`);
       clipFiles.push(clip);
       writeStatus(
         {
@@ -559,7 +972,13 @@ async function main(argv: string[]): Promise<number> {
     }
 
     abortIfCancelled('joining');
-    await concatClips(clipFiles, path.join(args.projectDir, OUTPUT_FILENAME));
+    const outPath = path.join(args.projectDir, OUTPUT_FILENAME);
+    // The file that leaves the machine, measured rather than assumed -- in the
+    // verify callback, so a bad join is refused while it is still a temp and
+    // out.mp4 keeps the previous render's file rather than becoming a bad one.
+    await concatClips(clipFiles, outPath, (tempOut) =>
+      requireAudibleTrack(tempOut, 'the joined video'),
+    );
     return finish('done', 'Render complete.');
   } catch (error) {
     if (error instanceof CancelledError || cancelled) {

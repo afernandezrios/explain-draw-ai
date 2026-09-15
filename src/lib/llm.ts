@@ -33,10 +33,12 @@ import {
   MIN_SCENE_SECONDS,
   MIN_SHAPES_PER_SCENE,
   MIN_TOTAL_SECONDS,
+  NARRATION_WPS,
   SHAPE_KINDS,
   SHAPE_NOTES,
   ScenesEnvelopeSchema,
   TARGET_TOTAL_SECONDS,
+  maxNarrationWords,
   validateScenes,
   type Scene,
   type Scenes,
@@ -128,6 +130,13 @@ export const SCRIPT_SYSTEM_PROMPT = [
   'Plain language, no jargon dumps, no bullet-point walls.',
 ].join(' ');
 
+/**
+ * A third narration anchor from the middle of the scene range. The two ends
+ * alone leave the model interpolating the rest of the range itself, and it
+ * reliably overshoots; the middle value is still derived from the same rate.
+ */
+const NARRATION_MID_SCENE_SECONDS = 10;
+
 export const SCENES_SYSTEM_PROMPT = [
   'You turn an explainer script into a storyboard of hand-drawn whiteboard scenes.',
   '',
@@ -146,6 +155,9 @@ export const SCENES_SYSTEM_PROMPT = [
   `- every scene lasts ${MIN_SCENE_SECONDS} to ${MAX_SCENE_SECONDS} seconds`,
   `- keep all label text in a scene to ${MAX_LABEL_WORDS} words or fewer, in total`,
   `- label sizes run from ${MIN_LABEL_SIZE} to ${MAX_LABEL_SIZE}`,
+  '- every scene carries a "narration": the words a voice speaks aloud while that scene is on screen, and the only thing the viewer hears',
+  `- size each narration to its own scene at ${NARRATION_WPS} words per second: ${maxNarrationWords(MIN_SCENE_SECONDS)} words in a ${MIN_SCENE_SECONDS} second scene, ${maxNarrationWords(NARRATION_MID_SCENE_SECONDS)} in a ${NARRATION_MID_SCENE_SECONDS} second one, ${maxNarrationWords(MAX_SCENE_SECONDS)} in a ${MAX_SCENE_SECONDS} second one`,
+  '- write narration as plain spoken English in full sentences: it is read aloud, so no headings, no lists, no stage directions',
   `- aim for about ${TARGET_TOTAL_SECONDS} seconds in total; it must land between ${MIN_TOTAL_SECONDS} and ${MAX_TOTAL_SECONDS} seconds, which is roughly ${MIN_SCENES} to ${MAX_SCENES} scenes`,
   '- scene 1 is the title scene: it states the topic like a hand-lettered title card',
   '- use color "accent" for the one thing that matters most in a scene and "emphasis" sparingly; null means ordinary dark ink',
@@ -177,8 +189,9 @@ const MAX_STORYBOARD_ATTEMPTS = 2;
 function storyboardCapsReminder(): string {
   return (
     '\n\nReminder: count the shapes in every scene -- each one must draw between ' +
-    `${MIN_SHAPES_PER_SCENE} and ${MAX_SHAPES_PER_SCENE} of them -- and keep each scene's ` +
-    `label text within ${MAX_LABEL_WORDS} words.`
+    `${MIN_SHAPES_PER_SCENE} and ${MAX_SHAPES_PER_SCENE} of them -- keep each scene's ` +
+    `label text within ${MAX_LABEL_WORDS} words, and keep each scene's narration within ` +
+    `${NARRATION_WPS} words per second of that scene's own duration.`
   );
 }
 

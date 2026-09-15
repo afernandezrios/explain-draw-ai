@@ -42,6 +42,35 @@ export const MAX_SCENE_SECONDS = 20;
  */
 export const MAX_LABEL_WORDS = 20;
 
+/**
+ * How fast narration is spoken: words per second. The single constant behind
+ * both the rule the model is given and the cap the validator enforces -- a
+ * scene's duration sets its narration word budget (`maxNarrationWords`), and the
+ * render worker refuses narration audio that would overrun the scene rather than
+ * speeding the voice up to fit.
+ */
+export const NARRATION_WPS = 2.5;
+
+/**
+ * The words one scene's narration may run to: that scene's own length at
+ * `NARRATION_WPS`, floored. Per-scene rather than one flat number, so a 7 second
+ * scene is held to a shorter line than a 20 second one -- and the prompt quotes
+ * the same arithmetic.
+ */
+export function maxNarrationWords(durationSeconds: number): number {
+  return Math.floor(durationSeconds * NARRATION_WPS);
+}
+
+/**
+ * The schema's own length cap on one scene's narration, which the provider's
+ * strict mode requires as a bound on the string. Derived from the word budget
+ * that actually binds -- the longest scene's words, at a deliberately roomy
+ * 12 characters per word -- so a narration that fits its scene can never trip
+ * this first no matter how long its words are. The per-scene word check is the
+ * rule; this only keeps the field finite for the provider.
+ */
+export const NARRATION_MAX_CHARS = maxNarrationWords(MAX_SCENE_SECONDS) * 12;
+
 export const MIN_LABEL_SIZE = 4;
 export const MAX_LABEL_SIZE = 14;
 
@@ -191,6 +220,13 @@ const SceneObjectSchema = z.object({
     .max(MAX_SCENE_SECONDS)
     .describe(`how long this scene is drawn and held, ${MIN_SCENE_SECONDS}-${MAX_SCENE_SECONDS} seconds`),
   shapes: z.array(ShapeSchema).describe('everything drawn in this scene, in drawing order'),
+  narration: z
+    .string()
+    .min(1)
+    .max(NARRATION_MAX_CHARS)
+    .describe(
+      'the English narration spoken aloud while this scene is on screen, one scene long; never empty',
+    ),
 });
 
 /**
@@ -285,6 +321,24 @@ export const SceneSchema = SceneObjectSchema.superRefine((scene, ctx) => {
       code: 'custom',
       path: ['shapes'],
       message: `scene has ${words} label words, over the cap of ${MAX_LABEL_WORDS}`,
+    });
+  }
+  // Narration is spoken at a fixed rate, so the scene's own duration is its
+  // word budget. A line over that budget cannot be spoken in the time the
+  // scene is on screen, and the voice is never sped up to make it fit.
+  const narrationWords = countWords(scene.narration);
+  const narrationBudget = maxNarrationWords(scene.durationSeconds);
+  if (narrationWords === 0) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['narration'],
+      message: 'narration is empty; every scene is spoken aloud',
+    });
+  } else if (narrationWords > narrationBudget) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['narration'],
+      message: `narration runs to ${narrationWords} words; ${scene.durationSeconds} seconds of scene speaks at most ${narrationBudget} of them at ${NARRATION_WPS} words per second`,
     });
   }
   if (scene.shapes.length < MIN_SHAPES_PER_SCENE || scene.shapes.length > MAX_SHAPES_PER_SCENE) {

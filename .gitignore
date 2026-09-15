@@ -9,6 +9,16 @@ next-env.d.ts
 # src/app/api/projects/ and silently drops the entire API surface from the repo.
 projects
 
+# Piper voice models, where the README tells you to download them: tens of
+# megabytes per voice, local user data, and not source. Anchored to the repo
+# root, so a folder called models/ deeper in the tree stays tracked.
+/models
+
+# The venv the README tells you to create at the repo root for piper, and the
+# bytecode any Python run leaves in the tree beside it.
+/.venv/
+__pycache__/
+
 # Secrets. Next.js loads .env, .env.local, .env.development, .env.test,
 # .env.production and their .local variants automatically, so anything that
 # starts with .env stays out of version control -- listed by name, a new variant

@@ -7,7 +7,9 @@ import { Scene, type SceneProps } from './Scene.tsx';
 /**
  * The default storyboard is only what Remotion Studio opens with. Real renders
  * pass the project's own scene through `inputProps`, which is why the
- * composition is parameterised rather than one composition per scene.
+ * composition is parameterised rather than one composition per scene. Studio has
+ * no project behind it, so its scene carries no narration -- a real render
+ * always names the WAV the worker synthesized.
  */
 const DEFAULT_SCENE: SceneData = {
   title: 'Studio default',
@@ -19,6 +21,8 @@ const DEFAULT_SCENE: SceneData = {
     { kind: 'arrow', from: { x: 38, y: 65 }, to: { x: 60, y: 65 }, color: null },
     { kind: 'circle', x: 76, y: 65, r: 12, color: 'accent' },
   ],
+  // Every scene carries one, so the studio's own scene has to as well.
+  narration: 'Every idea gets clearer when you draw it out, one stroke at a time.',
 };
 
 /** Each scene knows its own length, so the composition asks it per render. */
@@ -41,7 +45,7 @@ export const RemotionRoot: React.FC = () => {
       fps={FPS}
       width={CANVAS_WIDTH}
       height={CANVAS_HEIGHT}
-      defaultProps={{ scene: DEFAULT_SCENE, sceneIndex: 0, totalScenes: 1 }}
+      defaultProps={{ scene: DEFAULT_SCENE, sceneIndex: 0, totalScenes: 1, narrationPath: null }}
       calculateMetadata={calculateSceneMetadata}
     />
   );

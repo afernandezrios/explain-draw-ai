@@ -6,7 +6,8 @@
  *   <PROJECTS_DIR>/<id>/input.txt     what was pasted
  *                      script.json    the editable script
  *                      scenes.json    the validated storyboard
- *                      clips/         one MP4 per scene
+ *                      narration/     one WAV per scene, the worker's own
+ *                      clips/         one MP4 per scene, each with its audio
  *                      preview.mp4    one scene, fully drawn
  *                      out.mp4        the concatenated video
  *                      status.json    the live render state

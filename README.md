@@ -1,15 +1,35 @@
 # Explain-Draw AI
 
 Paste a topic or an explanation. It becomes a script, a drawn storyboard, and a
-~5 minute hand-drawn whiteboard video, all on your own machine.
+~5 minute hand-drawn whiteboard video with spoken narration, all on your own
+machine.
 
-Text → LLM (script + scene list) → zod validation → Remotion + rough.js draw each
-scene → ffmpeg joins the scene clips into `out.mp4`.
+Text → LLM (script + scene list) → zod validation → Piper speaks each scene's
+narration on this machine → Remotion + rough.js draw each scene with its audio
+baked into the clip → ffmpeg joins the scene clips into `out.mp4`.
 
 ## What you need
 
 - **Node 24** (the render worker is TypeScript run directly by Node) and npm.
-- **ffmpeg** on `PATH` (6.x is fine; `ffmpeg -version` should work).
+- **ffmpeg** on `PATH` (6.x is fine; `ffmpeg -version` should work), which
+  includes **ffprobe** — the worker measures every narration and every clip with
+  it before joining them.
+- **Python 3 and Piper** for the narration: `pip install piper-tts` puts a
+  `piper` command on `PATH`, which the worker runs as a subprocess (nothing of
+  it is imported or bundled). Plus one voice model, downloaded once:
+
+  ```bash
+  python3 -m venv .venv && . .venv/bin/activate  # keeps pip out of the system Python
+  pip install piper-tts
+  mkdir -p models
+  python3 -m piper.download_voices --data-dir models en_US-lessac-medium
+  ```
+
+  That lands `en_US-lessac-medium.onnx` and its `.onnx.json` in `models/`, which
+  is the default voice and the default directory (`PIPER_VOICE` and
+  `PIPER_MODELS_DIR` override both, see the env table). Synthesis is local and
+  offline: the narration never leaves the machine, and a missing Piper or voice
+  fails the render with a clear message rather than shipping a silent video.
 - **A model endpoint.** The pipeline asks for strict structured outputs first
   (`response_format: json_schema` with `strict: true`), which OpenAI supports.
   Some servers that advertise an "OpenAI-compatible" API reject or ignore that
@@ -48,9 +68,21 @@ npm run dev                          # http://localhost:3000
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Point it at your own endpoint if you have one. Endpoints without strict structured outputs fall back to plain JSON mode automatically. |
 | `OPENAI_MODEL` | `gpt-5.6-terra` | Any model your endpoint serves. |
 | `PROJECTS_DIR` | `./projects` | Where project folders are written. |
+| `PIPER_VOICE` | `en_US-lessac-medium` | The Piper voice. Its `.onnx` file and its `.onnx.json` must both sit in `PIPER_MODELS_DIR`. |
+| `PIPER_MODELS_DIR` | `./models` | Where the voice models live. The worker reads `<dir>/<voice>.onnx` from it and hands piper that absolute path; a relative value is resolved against the repo root, not the working directory. |
 
 `OPENAI_API_KEY` and anything in it are read by the Next server only, and
 `.env.local` is gitignored.
+
+The `PIPER_*` rows are read by the render *worker*, not by the Next server, so
+they reach a render the app starts (the server passes its environment on to the
+worker it spawns) but **not** a render you start from your terminal: the worker
+does not read `.env.local` itself, so export them in that shell.
+
+```bash
+export PIPER_MODELS_DIR=$HOME/piper-voices
+npm run render -- --project projects/<id>
+```
 
 ### Using DeepSeek
 
@@ -87,9 +119,12 @@ Two things reach the network, and only two.
   different typeface). The in-app preview is unaffected — it embeds a bundled
   copy of the face.
 
-Nothing else leaves the machine. The drawing, the encoding and the join are all
-local, and your project files are never uploaded. One exception worth naming: the
-*first* render downloads Remotion's Chrome Headless Shell (see above), which is a
+Nothing else leaves the machine, and your project files are never uploaded.
+That includes the narration, which is the question worth answering directly:
+Piper runs on this machine, spawning it is the only thing the worker does with
+it, and the text it is given stays in that process. The drawing, the encoding
+and the join are local too. One exception worth naming: the *first* render
+downloads Remotion's Chrome Headless Shell (see above), which is a
 several-hundred-megabyte download from Remotion's own CDN.
 
 ## Using it
@@ -114,7 +149,10 @@ answers for any id under `PROJECTS_DIR`.
    bundling the composition) and then draws the scene at full 1920x1080. On this
    laptop that is roughly half a minute to a minute for a 10-second scene, and it
    is refused with `409 BUSY` while another render is running.
-4. **Render the video.** Progress is per scene, and Cancel stops it.
+4. **Render the video.** Progress is per scene, and Cancel stops it. Before the
+   first frame, the worker speaks every scene's narration with Piper — a minute
+   or so for a full video, and the stage is where a render refuses a scene whose
+   narration cannot be said in the time that scene is on screen.
 
 ## Rendering from the command line
 
@@ -179,8 +217,10 @@ Everything is a file under `PROJECTS_DIR`. There is no database.
 ```
 projects/<id>/input.txt          what you pasted
               script.json        the editable script
-              scenes.json        the validated storyboard
+              scenes.json        the validated storyboard (narration included)
+              narration/         one WAV per scene, spoken by Piper: scene-000.wav, ...
               clips/             one MP4 per scene: scene-000.mp4, scene-001.mp4, ...
+                                 each carrying its scene's narration as its audio
               preview.mp4        the last single-scene preview
               status.json        live render state, written while rendering
               out.mp4            the joined video
@@ -201,10 +241,12 @@ where a player would find it.
 
 Projects accumulate: nothing prunes them, and `clips/` is never pruned either —
 it grows by one file per scene per full render, which is the point (the finished
-clips survive a cancel, and you can join them yourself). Delete a folder with
-`rm -rf` when you are done with it. If Generate fails after a project folder has
-been created, the folder is removed; a failed *storyboard* rebuild leaves both
-the script and the previous `scenes.json` exactly as they were.
+clips survive a cancel, and you can join them yourself). `narration/` is the same
+posture: one WAV per scene, overwritten by the next render that speaks that scene
+and never deleted on its own. Delete a folder with `rm -rf` when you are done
+with it. If Generate fails after a project folder has been created, the folder is
+removed; a failed *storyboard* rebuild leaves both the script and the previous
+`scenes.json` exactly as they were.
 
 ## Limits and honest notes
 
@@ -240,7 +282,7 @@ the script and the previous `scenes.json` exactly as they were.
   overruns them anyway. A storyboard must total 270–330 seconds with
   scenes of 7–20 seconds each; those caps are the model's instructions and are
   re-checked in code.
-- **Not in this build**, by design: voice or audio, PDF import, concept
+- **Not in this build**, by design: music or sound effects, PDF import, concept
   expansion beyond the single script pass, a project list, cloud rendering,
   auth, and exact-to-the-second durations.
 - **Licence:** Remotion is free for individuals and small companies; see
@@ -257,7 +299,9 @@ npx next typegen    # only if typecheck complains about .next/types
 ```
 
 `npm test` renders real video, so it needs ffmpeg, Chrome and its shared
-libraries — and it is slow, in the way the product is slow. It uses a temporary
+libraries, plus Piper and a voice model — a render speaks every scene's
+narration before it draws anything, so a machine that can render is a machine
+with both. It is slow, in the way the product is slow. It uses a temporary
 `PROJECTS_DIR` and never touches your projects. Two of the tests are worth
 knowing about before you run it:
 
