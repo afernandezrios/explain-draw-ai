@@ -20,6 +20,10 @@
  *     `SCENES_SYSTEM_PROMPT` in llm.ts is built by mapping over `SHAPE_KINDS`
  *     and `SHAPE_NOTES` and reading the caps above -- so the prompt and the
  *     validator cannot drift apart.
+ *
+ * What the model is *held to* is the structural half only: the refinements below
+ * are applied on this side, where a storyboard that breaks one can still be sent
+ * back for repair. `SceneShapeSchema` carries that reasoning.
  */
 
 import { z } from 'zod';
@@ -212,7 +216,22 @@ export function countLabelWords(shapes: Shape[]): number {
     .reduce((total, s) => total + countWords(s.text), 0);
 }
 
-const SceneObjectSchema = z.object({
+/**
+ * The structural half of a scene: types, ranges, enums, and nothing that has to
+ * look at the scene as a whole to decide. This is the half the provider's reply
+ * is held to -- `ScenesEnvelopeSchema` below is built from it -- and the half
+ * `SceneSchema` refines.
+ *
+ * The split is load-bearing. Refinements never reach the JSON Schema the model
+ * is sent, so an envelope carrying them could only ever enforce them *inside*
+ * the request: the reply would be rejected during parsing, before
+ * `generateScenes` could hand the validator's complaints back for its one repair
+ * pass -- leaving that repair dead code for exactly the failures it was written
+ * for. Kept apart, a storyboard survives the parse, is judged by `validateScenes`
+ * where the repair can see it, and is still refused, with details, if the repair
+ * fails too.
+ */
+export const SceneShapeSchema = z.object({
   title: z.string().min(1).max(120).describe('a few words naming this scene, for the progress list'),
   durationSeconds: z
     .number()
@@ -314,7 +333,7 @@ function checkBoardExtents(shapes: Shape[], ctx: z.RefinementCtx): void {
   });
 }
 
-export const SceneSchema = SceneObjectSchema.superRefine((scene, ctx) => {
+export const SceneSchema = SceneShapeSchema.superRefine((scene, ctx) => {
   const words = countLabelWords(scene.shapes);
   if (words > MAX_LABEL_WORDS) {
     ctx.addIssue({
@@ -360,9 +379,13 @@ export type Scenes = z.infer<typeof ScenesSchema>;
 /**
  * The envelope the model is asked for. The provider requires an object at the
  * JSON Schema root, so scenes travel wrapped; unwrap before validating.
+ *
+ * Carries `SceneShapeSchema`, not `SceneSchema`: the refinements are the
+ * validator's to apply, in a place the repair pass can hear about them. See the
+ * note on `SceneShapeSchema`.
  */
 export const ScenesEnvelopeSchema = z.object({
-  scenes: z.array(SceneSchema).describe('the storyboard, in order; scene 1 is the title scene'),
+  scenes: z.array(SceneShapeSchema).describe('the storyboard, in order; scene 1 is the title scene'),
 });
 
 /* ──────────────────────────── validation ────────────────────────── */

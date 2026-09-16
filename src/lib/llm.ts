@@ -131,11 +131,36 @@ export const SCRIPT_SYSTEM_PROMPT = [
 ].join(' ');
 
 /**
- * A third narration anchor from the middle of the scene range. The two ends
- * alone leave the model interpolating the rest of the range itself, and it
- * reliably overshoots; the middle value is still derived from the same rate.
+ * Every whole-second scene length and the words it allows, as one table.
+ *
+ * This replaces three anchors (7s, 10s, 20s) that all happened to divide evenly
+ * by the rate. They taught the model to multiply by 2.5 and never to round down,
+ * while every *odd* length lands on a half word -- 2.5 words per second of 19
+ * seconds is 47.5, and the validator floors that to 47. A storyboard one word
+ * over on one scene is rejected whole, so the arithmetic is worth stating rather
+ * than leaving the model to interpolate. Derived from `maxNarrationWords`, so the
+ * table and the check cannot disagree.
  */
-const NARRATION_MID_SCENE_SECONDS = 10;
+const NARRATION_BUDGET_TABLE = Array.from(
+  { length: MAX_SCENE_SECONDS - MIN_SCENE_SECONDS + 1 },
+  (_, offset) => {
+    const seconds = MIN_SCENE_SECONDS + offset;
+    return `${seconds}s: ${maxNarrationWords(seconds)} words`;
+  },
+).join(', ');
+
+/**
+ * The rounding rule, said once and quoted twice -- the prompt and the trailing
+ * reminder both need it. The example is an odd scene length, which is the case
+ * that lands on a half word.
+ */
+function narrationRoundingExample(): string {
+  // An even maximum means the odd length below it is in range; an odd maximum is
+  // one itself.
+  const seconds = MAX_SCENE_SECONDS % 2 === 0 ? MAX_SCENE_SECONDS - 1 : MAX_SCENE_SECONDS;
+  const budget = maxNarrationWords(seconds);
+  return `${seconds} seconds allows ${budget} words, never ${budget + 1}`;
+}
 
 export const SCENES_SYSTEM_PROMPT = [
   'You turn an explainer script into a storyboard of hand-drawn whiteboard scenes.',
@@ -156,7 +181,9 @@ export const SCENES_SYSTEM_PROMPT = [
   `- keep all label text in a scene to ${MAX_LABEL_WORDS} words or fewer, in total`,
   `- label sizes run from ${MIN_LABEL_SIZE} to ${MAX_LABEL_SIZE}`,
   '- every scene carries a "narration": the words a voice speaks aloud while that scene is on screen, and the only thing the viewer hears',
-  `- size each narration to its own scene at ${NARRATION_WPS} words per second: ${maxNarrationWords(MIN_SCENE_SECONDS)} words in a ${MIN_SCENE_SECONDS} second scene, ${maxNarrationWords(NARRATION_MID_SCENE_SECONDS)} in a ${NARRATION_MID_SCENE_SECONDS} second one, ${maxNarrationWords(MAX_SCENE_SECONDS)} in a ${MAX_SCENE_SECONDS} second one`,
+  `- size each narration to its own scene at ${NARRATION_WPS} words per second, rounded DOWN to a whole word. The full budget: ${NARRATION_BUDGET_TABLE}`,
+  `- never round up -- ${narrationRoundingExample()} -- because a narration one word over its scene's budget is rejected`,
+  '- leave two or three words of headroom under the budget rather than writing right up to it: a scene whose narration ends early is fine, a narration that cannot be spoken in the time the scene is on screen is not',
   '- write narration as plain spoken English in full sentences: it is read aloud, so no headings, no lists, no stage directions',
   `- aim for about ${TARGET_TOTAL_SECONDS} seconds in total; it must land between ${MIN_TOTAL_SECONDS} and ${MAX_TOTAL_SECONDS} seconds, which is roughly ${MIN_SCENES} to ${MAX_SCENES} scenes`,
   '- scene 1 is the title scene: it states the topic like a hand-lettered title card',
@@ -190,23 +217,29 @@ function storyboardCapsReminder(): string {
   return (
     '\n\nReminder: count the shapes in every scene -- each one must draw between ' +
     `${MIN_SHAPES_PER_SCENE} and ${MAX_SHAPES_PER_SCENE} of them -- keep each scene's ` +
-    `label text within ${MAX_LABEL_WORDS} words, and keep each scene's narration within ` +
-    `${NARRATION_WPS} words per second of that scene's own duration.`
+    `label text within ${MAX_LABEL_WORDS} words, and keep each scene's narration to the ` +
+    `word budget for its own length: ${NARRATION_WPS} words per second rounded DOWN to a ` +
+    `whole word (${narrationRoundingExample()}).`
   );
 }
 
 /**
- * The validator's complaints, rewritten as a repair request. Envelope paths
- * (`scenes.2.shapes`) become 1-based scene numbers, because the prompt calls
- * the title scene "scene 1" and the model must fix the scene the validator
- * means, not the one two doors down.
+ * The validator's complaints, rewritten as a repair request. Scene indices
+ * become 1-based scene numbers, because the prompt calls the title scene
+ * "scene 1" and the model must fix the scene the validator means, not the one
+ * two doors down.
+ *
+ * The index arrives in one of two shapes: `scenes.2.shapes`, when the complaint
+ * came from the envelope, or `2.shapes`, from `validateScenes` walking the
+ * unwrapped array -- which is the one `generateScenes` actually feeds in. Both
+ * are handled, so neither has to know about the other.
  */
 function repairInstruction(errors: string[]): string {
   const problems = errors
     .map(
       (error) =>
         '- ' +
-        error.replace(/^scenes\.(\d+)\./, (_, index: string) => `scene ${Number(index) + 1}, `),
+        error.replace(/^(?:scenes\.)?(\d+)\./, (_, index: string) => `scene ${Number(index) + 1}, `),
     )
     .join('\n');
   return (
@@ -501,7 +534,7 @@ export class OpenAiLlm implements Llm {
         });
         return this.requestPlainJson(client, system, user, label, format, envelope, trailing, attempt);
       }
-      const llmError = asLlmError(error);
+      const llmError = asLlmError(error, label);
       if (!recorded) {
         this.recordEnd(
           base,
@@ -558,7 +591,7 @@ export class OpenAiLlm implements Llm {
         body: { ...body, thinking: { type: thinkingMode } },
       });
     } catch (error) {
-      const llmError = asLlmError(error);
+      const llmError = asLlmError(error, label);
       // The SDK's own retry (maxRetries) is invisible here: one line covers the
       // whole logical attempt, however many HTTP requests it took.
       this.recordEnd(
@@ -686,9 +719,21 @@ export class OpenAiLlm implements Llm {
   }
 }
 
-function asLlmError(error: unknown): LlmError {
+function asLlmError(error: unknown, label: string): LlmError {
   if (error instanceof LlmError) {
     return error;
+  }
+  // The strict path hands the reply straight to the envelope's zod schema with a
+  // throwing `parse`, so a reply that breaks the structural rules rejects the SDK
+  // call with a raw ZodError. That is our verdict on the model's answer, not a
+  // failed request -- filed as one it reaches the user as a 502 saying the
+  // endpoint failed, when the endpoint answered perfectly well.
+  if (error instanceof z.ZodError) {
+    return new LlmError(
+      'invalid-output',
+      `The model returned a ${label} that does not match the expected format.`,
+      zodIssueDetails(error),
+    );
   }
   return new LlmError('request-failed', describeApiError(error));
 }
