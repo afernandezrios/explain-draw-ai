@@ -46,6 +46,7 @@ import {
   CRF,
   DEFAULT_PIPER_MODELS_DIR,
   DEFAULT_PIPER_VOICE,
+  fittedSceneSeconds,
   FPS,
   IMAGE_FORMAT,
   LOCK_FILENAME,
@@ -589,12 +590,16 @@ async function requireAudibleTrack(file: string, what: string): Promise<void> {
  * down to fit, so a narration longer than its scene is refused here and the
  * render stops -- before anything is bundled or drawn -- naming the scene and
  * both durations, rather than being truncated or rushed to fit.
+ *
+ * The measurement the gate took is also the function's result, because the scene
+ * is rendered for it: a narration that ends early is a scene that ends early,
+ * not seconds of silence (see `fittedSceneSeconds`).
  */
 async function synthesizeNarration(options: {
   scene: Scene;
   index: number;
   narrationDir: string;
-}): Promise<void> {
+}): Promise<number> {
   const { scene, index, narrationDir } = options;
   const finalPath = path.join(narrationDir, narrationFileName(index));
   const tempPath = `${finalPath}.tmp`;
@@ -621,6 +626,7 @@ async function synthesizeNarration(options: {
     }
 
     fs.renameSync(tempPath, finalPath);
+    return seconds;
   } finally {
     // No-op after a successful rename; the cleanup for a refused, failed or
     // cancelled WAV, so no `.wav.tmp` outlives the run.
@@ -637,15 +643,18 @@ async function synthesizeNarration(options: {
  * before `bundle()` means an overrun stops the render before a single frame is
  * encoded, and the bundle then serves the very files the composition plays.
  *
- * Returns the directory the bundle takes as its public directory.
+ * Returns the directory the bundle takes as its public directory, and every WAV
+ * it wrote measured in seconds, keyed by storyboard index -- the fit each scene
+ * is rendered for, gathered here so the render stage only has to look it up.
  */
 async function synthesizeNarrations(options: {
   projectDir: string;
   scenes: Scene[];
   /** Storyboard indices this job renders: every scene, or just the preview's. */
   indices: number[];
-}): Promise<string> {
+}): Promise<{ narrationDir: string; narrationSeconds: Map<number, number> }> {
   const narrationDir = path.join(options.projectDir, NARRATION_DIRNAME);
+  const narrationSeconds = new Map<number, number>();
   fs.mkdirSync(narrationDir, { recursive: true });
   writeStatus({ message: 'Preparing narration...' }, true);
   process.stdout.write(
@@ -672,10 +681,13 @@ async function synthesizeNarrations(options: {
       },
       true,
     );
-    await synthesizeNarration({ scene: options.scenes[index], index, narrationDir });
+    narrationSeconds.set(
+      index,
+      await synthesizeNarration({ scene: options.scenes[index], index, narrationDir }),
+    );
   }
 
-  return narrationDir;
+  return { narrationDir, narrationSeconds };
 }
 
 /* ─────────────────────────────── main ───────────────────────────── */
@@ -687,18 +699,38 @@ async function renderScene(options: {
   totalScenes: number;
   /** Scenes already finished when this one starts. A preview job has none. */
   completedScenes: number;
+  /** This scene's WAV as measured; the clip is rendered for it, not the storyboard. */
+  narrationSeconds: number;
   outputPath: string;
   /** Maps this scene's own 0..1 progress onto the job's. */
   jobProgress: (sceneProgress: number) => number;
 }): Promise<void> {
-  const { serveUrl, scene, index, totalScenes, completedScenes, outputPath, jobProgress } = options;
+  const {
+    serveUrl,
+    scene,
+    index,
+    totalScenes,
+    completedScenes,
+    narrationSeconds,
+    outputPath,
+    jobProgress,
+  } = options;
   // The narration was synthesized before the bundle, and the bundle serves the
   // narration directory as its public directory, so the composition names the
   // file the way `staticFile` resolves it. One inputProps object reaches both
   // `selectComposition` and `renderMedia`: the duration the composition is
   // selected with and the one it is rendered with can never disagree.
+  //
+  // The scene in it is a fitted copy, not the storyboard's: its `durationSeconds`
+  // is what this scene's narration actually measured plus a tail, so the clip
+  // ends with the voice. Render-only on purpose -- the gate checked the
+  // storyboard's length, the status lines and the filenames name the scene's own
+  // index, and `scenes.json` keeps the number the model wrote.
   const inputProps = {
-    scene,
+    scene: {
+      ...scene,
+      durationSeconds: fittedSceneSeconds(scene.durationSeconds, narrationSeconds),
+    },
     sceneIndex: index,
     totalScenes,
     narrationPath: narrationFileName(index),
@@ -893,7 +925,7 @@ async function main(argv: string[]): Promise<number> {
     // a stale WAV under a rebuilt storyboard is worse than none. The narration
     // directory becomes the bundle's public directory, so the composition's
     // `staticFile` names resolve to the WAVs just written.
-    const narrationDir = await synthesizeNarrations({
+    const { narrationDir, narrationSeconds } = await synthesizeNarrations({
       projectDir: args.projectDir,
       scenes,
       indices: previewing ? [args.scene as number] : scenes.map((_, index) => index),
@@ -923,6 +955,7 @@ async function main(argv: string[]): Promise<number> {
           index: sceneIndex,
           totalScenes: 1,
           completedScenes: 0,
+          narrationSeconds: narrationSeconds.get(sceneIndex) as number,
           outputPath: clipPath,
           // A preview is its own job of one scene, so its progress is the
           // scene's own: an index over one total would read 100% immediately.
@@ -954,6 +987,7 @@ async function main(argv: string[]): Promise<number> {
         index,
         totalScenes: scenes.length,
         completedScenes: index,
+        narrationSeconds: narrationSeconds.get(index) as number,
         outputPath: clip,
         jobProgress: (sceneProgress) => overallProgress(index, sceneProgress, scenes.length),
       });

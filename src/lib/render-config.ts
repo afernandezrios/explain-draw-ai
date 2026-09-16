@@ -121,3 +121,38 @@ export function narrationFileName(index: number): string {
 export function secondsToFrames(seconds: number): number {
   return Math.round(seconds * FPS);
 }
+
+/**
+ * How long a scene's clip is rendered once its narration has been measured:
+ * the trim-only fit.
+ *
+ * A storyboard's `durationSeconds` is the model's estimate of how long its scene
+ * needs, spoken at `NARRATION_WPS` -- but Piper speaks faster than that rate and
+ * the prompt asks the model to leave headroom, so the WAV routinely ends seconds
+ * before the scene does. Left alone, every scene ends in dead air. So the clip
+ * is rendered for the measurement instead: the narration plus a small tail.
+ *
+ * `NARRATION_TAIL_SECONDS` is that tail -- a beat between one scene's voice and
+ * the next's. `MIN_FITTED_SCENE_SECONDS` is the floor: a very short narration
+ * (the title scene's, usually) still gets a clip long enough to read, rather
+ * than a flash cut.
+ *
+ * Seconds in, seconds out; the one frame rounding is the composition's, where
+ * `secondsToFrames` turns the fitted scene into `durationInFrames`.
+ */
+export const NARRATION_TAIL_SECONDS = 0.5;
+export const MIN_FITTED_SCENE_SECONDS = 3;
+
+/**
+ * The fit itself, clamped so it only ever shortens a scene. The upper bound is
+ * the storyboard's own length, so a scene never outlives what the model asked
+ * for -- and a narration the overrun gate admitted is never cut off beyond the
+ * rounding slack that gate already allows. `Math.min` comes last so even a
+ * pathological scene shorter than the floor cannot be stretched past itself.
+ */
+export function fittedSceneSeconds(sceneSeconds: number, narrationSeconds: number): number {
+  return Math.min(
+    Math.max(narrationSeconds + NARRATION_TAIL_SECONDS, MIN_FITTED_SCENE_SECONDS),
+    sceneSeconds,
+  );
+}

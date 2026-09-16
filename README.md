@@ -152,7 +152,11 @@ answers for any id under `PROJECTS_DIR`.
 4. **Render the video.** Progress is per scene, and Cancel stops it. Before the
    first frame, the worker speaks every scene's narration with Piper — a minute
    or so for a full video, and the stage is where a render refuses a scene whose
-   narration cannot be said in the time that scene is on screen.
+   narration cannot be said in the time that scene is on screen. It is also where
+   each scene's length is decided: a clip runs for the narration just spoken plus
+   half a second of tail — never under three seconds, never past the storyboard's
+   own seconds — so a scene ends with its voice instead of holding silence until
+   its storyboard time is up.
 
 ## Rendering from the command line
 
@@ -284,7 +288,7 @@ removed; a failed *storyboard* rebuild leaves both the script and the previous
   re-checked in code.
 - **Not in this build**, by design: music or sound effects, PDF import, concept
   expansion beyond the single script pass, a project list, cloud rendering,
-  auth, and exact-to-the-second durations.
+  and auth.
 - **Licence:** Remotion is free for individuals and small companies; see
   <https://www.remotion.dev/docs/license>. Remotion is the only dependency with
   a licence worth checking before commercial use.
