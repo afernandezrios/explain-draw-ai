@@ -22,6 +22,7 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathExists, readJsonFile, writeJsonAtomic, writeTextAtomic } from './atomic.ts';
+import { layOutScenes } from './layout.ts';
 import type { Llm, Script } from './llm.ts';
 import {
   CLIPS_DIRNAME,
@@ -36,7 +37,7 @@ import {
   sceneClipName,
 } from './render-config.ts';
 import { isRenderStatus, type RenderStatus } from './render-status.ts';
-import { validateScenes, type Scenes } from './schema.ts';
+import { ScenesShapeSchema, issueDetails, validateScenes, type Scenes } from './schema.ts';
 
 export type PipelineErrorKind = 'empty-input' | 'input-too-long' | 'bad-project-id';
 
@@ -167,7 +168,15 @@ export function writeScenes(id: string, scenes: Scenes): void {
   writeJsonAtomic(projectFiles(id).scenes, scenes);
 }
 
-/** Re-validates the stored storyboard, so a hand-edited file cannot slip past. */
+/**
+ * Re-validates the stored storyboard, so a hand-edited file cannot slip past.
+ *
+ * Parse, lay out, validate -- the same three steps generation runs, in the same
+ * order, so a file that came from a model and a file that came from an editor
+ * are judged identically. Laying out an already-laid-out storyboard is a no-op
+ * (see `layOutScenes`), which is what makes this safe to do on every read
+ * rather than only on the way in.
+ */
 export function readScenes(
   id: string,
 ): { ok: true; scenes: Scenes } | { ok: false; errors: string[] } {
@@ -175,7 +184,11 @@ export function readScenes(
   if (raw === null) {
     return { ok: false, errors: ['scenes.json is missing or not valid JSON'] };
   }
-  return validateScenes(raw);
+  const structural = ScenesShapeSchema.safeParse(raw);
+  if (!structural.success) {
+    return { ok: false, errors: issueDetails(structural.error) };
+  }
+  return validateScenes(layOutScenes(structural.data).scenes);
 }
 
 export function readStatus(id: string): RenderStatus | null {

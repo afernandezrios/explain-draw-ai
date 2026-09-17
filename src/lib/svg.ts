@@ -7,8 +7,9 @@
  * preview cannot disagree with the render about what a scene looks like.
  */
 
-import { BOARD_H, BOARD_W, boardSvg, FONT_FAMILY } from './board.ts';
+import { BOARD_H, BOARD_W, boardSvg, COLOR_VALUES, FONT_FAMILY } from './board.ts';
 import { labelPlacement, shapePaths } from './doodle.ts';
+import { captionPlacement } from './layout.ts';
 import type { Scene } from './schema.ts';
 
 /** Hachure shading starts fading in once the outline is this far along. */
@@ -42,6 +43,21 @@ function fillOpacity(progress: number): number {
   return clamp01((progress - FILL_FADE_START) / (1 - FILL_FADE_START));
 }
 
+/** One run of handwriting. Labels and figure captions are drawn the same way. */
+function textSvg(
+  x: number,
+  y: number,
+  text: string,
+  fontSize: number,
+  color: string,
+  opacity: number,
+): string {
+  return (
+    `<text x="${x}" y="${y}" font-family="${FONT_FAMILY}, cursive" font-size="${fontSize}"` +
+    ` fill="${color}" opacity="${opacity.toFixed(4)}" xml:space="preserve">${escapeXml(text)}</text>`
+  );
+}
+
 /**
  * @param progress one 0..1 draw progress per shape, in scene order. Missing
  * entries are treated as fully drawn.
@@ -66,17 +82,11 @@ export function sceneSvg(scene: Scene, progress: number[] = [], options: SceneSv
 
     if (shape.kind === 'label') {
       const label = labelPlacement(shape);
-      parts.push(
-        `<text x="${label.x}" y="${label.y}" font-family="${FONT_FAMILY}, cursive" font-size="${
-          label.fontSize
-        }" fill="${label.color}" opacity="${drawn.toFixed(4)}" xml:space="preserve">${escapeXml(
-          label.text,
-        )}</text>`,
-      );
+      parts.push(textSvg(label.x, label.y, label.text, label.fontSize, label.color, drawn));
       return;
     }
 
-    for (const path of shapePaths(shape)) {
+    for (const path of shapePaths(shape, scene.shapes)) {
       const common = `d="${path.d}" stroke="${path.color}" stroke-width="${path.strokeWidth}" stroke-linecap="round" stroke-linejoin="round"`;
       if (path.kind === 'fill') {
         // Hachure shading fades in; it is never dash-drawn.
@@ -93,6 +103,26 @@ export function sceneSvg(scene: Scene, progress: number[] = [], options: SceneSv
           `<path ${common} fill="none" pathLength="1" stroke-dasharray="1" stroke-dashoffset="${(
             1 - drawn
           ).toFixed(4)}"/>`,
+        );
+      }
+    }
+
+    if (shape.kind === 'stickFigure') {
+      // A caption is not a shape in the storyboard -- materialising one would
+      // add an entry to `shapes` and shift every index after it, which is what
+      // the anchors address -- so it is drawn here, off the figure, and rides
+      // the figure's own draw progress so it cannot appear before the person.
+      const caption = captionPlacement(shape);
+      if (caption !== null) {
+        parts.push(
+          textSvg(
+            caption.x,
+            caption.y,
+            caption.text,
+            caption.fontSize,
+            COLOR_VALUES[shape.color ?? 'ink'],
+            drawn,
+          ),
         );
       }
     }

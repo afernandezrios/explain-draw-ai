@@ -111,6 +111,77 @@ const ColorSchema = z
   .nullable()
   .describe('null for the default dark ink; accent is the single blue highlight; emphasis is red');
 
+/* ──────────────────────────── anchors ───────────────────────────── */
+
+/**
+ * An anchor says which *other shape* a shape belongs to, by its index in the
+ * same scene's `shapes` array.
+ *
+ * This is the difference between a pile of coordinates and a diagram. A label
+ * that names a box can say which box, and `layOutScenes` then centres it in
+ * that box and shrinks it until it fits; an arrow can say which two things it
+ * joins, and the layout pass moves its ends onto their edges. The model is good
+ * at the relationship -- "this arrow runs from the users to the server" -- and
+ * bad at the arithmetic that relationship implies, because it cannot know how
+ * wide a word will be in this handwriting or where a circle's edge falls. So
+ * the model states the relationship and the code computes the geometry.
+ *
+ * Anchors are optional in the stored form: a scene with none is laid out
+ * exactly as written, which is what every storyboard generated before this
+ * existed is. Whether an anchor actually *resolves* -- the index in range, the
+ * target of an acceptable kind -- is a whole-scene question and is settled by
+ * the layout pass and the refinements below, not by these field definitions.
+ */
+function shapeRef(description: string) {
+  return z
+    .number()
+    .int()
+    .min(0)
+    .max(MAX_SHAPES_PER_SCENE - 1)
+    .nullable()
+    .optional()
+    .describe(`${description}; 0-based index into this scene's shapes, or null`);
+}
+
+/** A caption under a stick figure. Optional, and empty is not a caption. */
+function optionalCaption() {
+  return z
+    .string()
+    .min(1)
+    .max(160)
+    .nullable()
+    .optional()
+    .describe(
+      'a short caption drawn beneath the figure, or null for none; counts toward the scene label-word budget',
+    );
+}
+
+/**
+ * The provider-facing form of an anchored field: the same field with its
+ * `.optional()` stripped, so it is required-but-nullable.
+ *
+ * Stripping beats writing the field a second time with the same bounds and
+ * description, which is a pair that can drift. The strict structured-output
+ * subset has no way to say "may be absent" -- every property must appear in
+ * `required` -- so absence is spelled `null`, and this is the one place that
+ * knows it. See `SHAPE_SPECS` below for where it is applied.
+ */
+function anchored(field: z.ZodTypeAny): z.ZodTypeAny {
+  // Stripped, not re-wrapped. `.nullable()` on an optional leaves the result
+  // optional, the JSON Schema keeps the field out of `required`, and the model
+  // is never told it exists -- which is the one thing this is here to prevent.
+  // So both wrappers come off before the one that stays goes back on.
+  //
+  // The cast is zod's typing, not ours: `unwrap()` on the classic classes is
+  // declared against the core schema they are built on, so the compiler loses
+  // track of a value that is the very schema passed in.
+  let bare: z.ZodTypeAny = field;
+  while (bare instanceof z.ZodOptional || bare instanceof z.ZodNullable) {
+    bare = bare.unwrap() as z.ZodTypeAny;
+  }
+  return bare.nullable();
+}
+
 /* ──────────────────────── the shape vocabulary ──────────────────── */
 
 /**
@@ -124,6 +195,8 @@ const SHAPE_SPECS = {
     kind: z.literal('arrow'),
     from: PointSchema.describe('tail of the arrow'),
     to: PointSchema.describe('tip of the arrow'),
+    fromShape: shapeRef('the shape the arrow starts on'),
+    toShape: shapeRef('the shape the arrow points into'),
     color: ColorSchema,
   }),
   circle: z.object({
@@ -146,6 +219,7 @@ const SHAPE_SPECS = {
     x: Percent.describe('left edge of the text, across'),
     y: Percent.describe('baseline of the text, down'),
     text: z.string().min(1).max(160).describe('a few handwritten words, not a sentence'),
+    inShape: shapeRef('the shape this text sits inside and names'),
     size: LabelSize,
     color: ColorSchema,
   }),
@@ -154,6 +228,7 @@ const SHAPE_SPECS = {
     x: Percent.describe('centre of the figure, across'),
     y: Percent.describe('centre of the figure, down'),
     height: Height.describe('total height head to feet, percent of board height'),
+    label: optionalCaption(),
     color: ColorSchema,
   }),
   underline: z.object({
@@ -161,12 +236,15 @@ const SHAPE_SPECS = {
     x: Percent.describe('left end, across'),
     y: Percent.describe('the line sits just below this y'),
     w: Percent.describe('length, percent of board width'),
+    underLabel: shapeRef('the label this line runs under'),
     color: ColorSchema,
   }),
   connector: z.object({
     kind: z.literal('connector'),
     from: PointSchema,
     to: PointSchema,
+    fromShape: shapeRef('the shape the line starts on'),
+    toShape: shapeRef('the shape the line ends on'),
     color: ColorSchema,
   }),
   cloud: z.object({
@@ -175,6 +253,16 @@ const SHAPE_SPECS = {
     y: Percent.describe('centre, down'),
     w: Percent.describe('width, percent of board width'),
     h: Percent.describe('height, percent of board height'),
+    color: ColorSchema,
+  }),
+  crossOut: z.object({
+    kind: z.literal('crossOut'),
+    target: z
+      .number()
+      .int()
+      .min(0)
+      .max(MAX_SHAPES_PER_SCENE - 1)
+      .describe('0-based index of the shape to cross out; the X lands on its bounds'),
     color: ColorSchema,
   }),
 } as const;
@@ -186,23 +274,88 @@ export const SHAPE_KINDS = Object.keys(SHAPE_SPECS) as ShapeKind[];
 
 /** How each kind is laid out, fed to the model. Exhaustive by construction. */
 export const SHAPE_NOTES: Record<ShapeKind, string> = {
-  arrow: 'a wobbly arrow from `from` to `to`, with an open head at `to`',
+  arrow:
+    'a wobbly arrow from `from` to `to`, with an open head at `to`; name the two shapes it joins in `fromShape`/`toShape` and its ends are moved onto their edges for you',
   circle: 'an imperfect circle centred at `x`,`y` with radius `r`',
   box: 'a rough rectangle with its top-left corner at `x`,`y`',
-  label: 'handwritten text anchored at its left edge and baseline',
-  stickFigure: 'a stick person centred at `x`,`y`',
-  underline: 'a wobbly line under text, starting at `x`,`y` and running right `w`',
-  connector: 'a plain wobbly line from `from` to `to`, for linking two things',
+  label:
+    'handwritten text anchored at its left edge and baseline; name the box, circle or cloud it sits in via `inShape` and it is centred inside that shape and shrunk until it fits. One label per shape: a second label naming the same shape lands on top of the first',
+  stickFigure:
+    'a stick person centred at `x`,`y`; put whatever it represents in `label` and the words are written under its feet, so it is never an unlabelled figure',
+  underline:
+    'a wobbly line under text, starting at `x`,`y` and running right `w`; name the label in `underLabel` and the line is sized to the words it underlines',
+  connector:
+    'a plain wobbly line from `from` to `to`, for linking two things; name the shapes in `fromShape`/`toShape` and its ends are moved onto their edges',
   cloud: 'a cloud outline centred at `x`,`y`, for thoughts or "the cloud"',
+  crossOut:
+    'a large X drawn across another shape, for something broken, cancelled or removed; `target` is the index of the shape it crosses',
 };
+
+/** Which kinds carry which anchor fields. Adding one here reaches the provider. */
+const ANCHORED_FIELDS: Partial<Record<ShapeKind, readonly string[]>> = {
+  arrow: ['fromShape', 'toShape'],
+  label: ['inShape'],
+  stickFigure: ['label'],
+  underline: ['underLabel'],
+  connector: ['fromShape', 'toShape'],
+};
+
+/**
+ * The same vocabulary with every anchored field made required-but-nullable,
+ * built from `SHAPE_SPECS` rather than written out again -- re-declaring the
+ * fields would be a second copy of their bounds and descriptions, and two
+ * copies of `0..11` do not stay equal.
+ *
+ * Kinds with nothing to make required pass through untouched, so this cannot
+ * alter a shape that has no anchors to speak of.
+ */
+function providerVariantsFor(kind: ShapeKind): z.ZodTypeAny {
+  // The kind is a runtime value here, so the union's per-kind types are gone;
+  // the fields are read back out and extended generically. `ANCHORED_FIELDS`
+  // is what keeps the names honest.
+  const spec = SHAPE_SPECS[kind] as unknown as z.ZodObject<z.ZodRawShape>;
+  const keys = ANCHORED_FIELDS[kind];
+  if (keys === undefined) {
+    return spec;
+  }
+  // `ZodRawShape` is declared in zod's core vocabulary, and its schemas come
+  // back out as core types even though the classic classes went in -- so the
+  // fields are read into the classic vocabulary here, once, where the two meet.
+  const shape = { ...spec.shape } as Record<string, z.ZodTypeAny>;
+  for (const key of keys) {
+    shape[key] = anchored(shape[key]);
+  }
+  return spec.extend(shape);
+}
 
 const shapeVariants = Object.values(SHAPE_SPECS) as unknown as [
   (typeof SHAPE_SPECS)['arrow'],
   ...(typeof SHAPE_SPECS)[ShapeKind][],
 ];
 
+const providerShapeVariants = SHAPE_KINDS.map(providerVariantsFor) as unknown as [
+  (typeof SHAPE_SPECS)['arrow'],
+  ...(typeof SHAPE_SPECS)[ShapeKind][],
+];
+
+/**
+ * What a storyboard is parsed with, and what the `Shape` type comes from: an
+ * anchor may be absent, and absent means none.
+ */
 export const ShapeSchema = z.discriminatedUnion('kind', shapeVariants);
 export type Shape = z.infer<typeof ShapeSchema>;
+
+/**
+ * What the provider is asked to produce. Identical but for the anchors, which
+ * the strict subset can only express as required-nullable -- it has no way to
+ * say "may be absent", so absence is spelled `null` there.
+ *
+ * A reply is still *parsed* with the loose `ShapeSchema` above, never with
+ * this: the model omitting a field whose only sensible value was `null` is not
+ * worth discarding a storyboard over, and parsing loosely is what makes the
+ * two forms agree. This schema exists to be sent, not to judge.
+ */
+export const ProviderShapeSchema = z.discriminatedUnion('kind', providerShapeVariants);
 
 /* ────────────────────────────── scenes ──────────────────────────── */
 
@@ -210,10 +363,22 @@ export function countWords(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
+/**
+ * Every word the scene writes on the board: the labels, and the captions under
+ * the figures. One budget covers both -- a caption is written in the same
+ * handwriting as a label and takes up the same room, so letting figure captions
+ * go uncounted would be a way to get text onto the board past the cap.
+ */
 export function countLabelWords(shapes: Shape[]): number {
-  return shapes
-    .filter((s): s is Extract<Shape, { kind: 'label' }> => s.kind === 'label')
-    .reduce((total, s) => total + countWords(s.text), 0);
+  let total = 0;
+  for (const shape of shapes) {
+    if (shape.kind === 'label') {
+      total += countWords(shape.text);
+    } else if (shape.kind === 'stickFigure' && shape.label) {
+      total += countWords(shape.label);
+    }
+  }
+  return total;
 }
 
 /**
@@ -230,23 +395,33 @@ export function countLabelWords(shapes: Shape[]): number {
  * for. Kept apart, a storyboard survives the parse, is judged by `validateScenes`
  * where the repair can see it, and is still refused, with details, if the repair
  * fails too.
+ *
+ * It is written once and pointed at either vocabulary, so the two forms can
+ * only ever differ in their shapes -- the scene's own fields, and the rules
+ * about them, cannot drift apart between what is sent and what is parsed.
  */
-export const SceneShapeSchema = z.object({
-  title: z.string().min(1).max(120).describe('a few words naming this scene, for the progress list'),
-  durationSeconds: z
-    .number()
-    .min(MIN_SCENE_SECONDS)
-    .max(MAX_SCENE_SECONDS)
-    .describe(`how long this scene is drawn and held, ${MIN_SCENE_SECONDS}-${MAX_SCENE_SECONDS} seconds`),
-  shapes: z.array(ShapeSchema).describe('everything drawn in this scene, in drawing order'),
-  narration: z
-    .string()
-    .min(1)
-    .max(NARRATION_MAX_CHARS)
-    .describe(
-      'the English narration spoken aloud while this scene is on screen, one scene long; never empty',
-    ),
-});
+function sceneOf<T extends z.ZodTypeAny>(shapes: T) {
+  return z.object({
+    title: z.string().min(1).max(120).describe('a few words naming this scene, for the progress list'),
+    durationSeconds: z
+      .number()
+      .min(MIN_SCENE_SECONDS)
+      .max(MAX_SCENE_SECONDS)
+      .describe(
+        `how long this scene is drawn and held, ${MIN_SCENE_SECONDS}-${MAX_SCENE_SECONDS} seconds`,
+      ),
+    shapes: z.array(shapes).describe('everything drawn in this scene, in drawing order'),
+    narration: z
+      .string()
+      .min(1)
+      .max(NARRATION_MAX_CHARS)
+      .describe(
+        'the English narration spoken aloud while this scene is on screen, one scene long; never empty',
+      ),
+  });
+}
+
+export const SceneShapeSchema = sceneOf(ShapeSchema);
 
 /**
  * Nothing may be drawn off the board.
@@ -329,10 +504,27 @@ function checkBoardExtents(shapes: Shape[], ctx: z.RefinementCtx): void {
       case 'connector':
         // Positioned by points, each of which is already inside 0-100.
         break;
+      case 'crossOut':
+        // Drawn on its target's own bounds, so it reaches exactly as far as the
+        // target does -- and the target is checked where it is. Nothing to
+        // check here, and deliberately no attempt to resolve the index: the
+        // layout pass owns that, and can leave a crossOut pointing nowhere.
+        break;
     }
   });
 }
 
+/**
+ * The rules a scene can only be judged against as a whole.
+ *
+ * Anchors are deliberately absent from this list. Whether one resolves depends
+ * on the rest of the scene, but the answer is never "refuse": `layOutScenes`
+ * clears an anchor it cannot resolve and draws the shape where the model put
+ * it, so by the time a scene is validated every surviving anchor is a good one
+ * and the only anchors left to complain about are the ones already gone. That
+ * is why the shape kinds an anchor may point at live in `layout.ts` rather than
+ * here -- one owner, and it is the module that acts on them.
+ */
 export const SceneSchema = SceneShapeSchema.superRefine((scene, ctx) => {
   const words = countLabelWords(scene.shapes);
   if (words > MAX_LABEL_WORDS) {
@@ -372,13 +564,29 @@ export const SceneSchema = SceneShapeSchema.superRefine((scene, ctx) => {
 
 export type Scene = z.infer<typeof SceneSchema>;
 
+/**
+ * A storyboard read structurally, before anything has looked at it as a whole.
+ *
+ * This is the first of the three steps every read path runs -- parse, then
+ * `layOutScenes`, then `validateScenes` -- and the order matters: the layout
+ * pass can fix what the refinements would refuse (it clamps an underline that
+ * runs off the right edge, for one), so judging the geometry before laying it
+ * out would reject a storyboard the renderer would have drawn correctly.
+ *
+ * It is also the only one of the three that can reject an unreadable file, which
+ * is why it is a schema rather than a cast: `readScenes` has to tell "this is not
+ * a storyboard" apart from "this storyboard breaks a rule".
+ */
+export const ScenesShapeSchema = z.array(SceneShapeSchema);
+
 /** A storyboard, as stored in scenes.json and rendered by the worker. */
 export const ScenesSchema = z.array(SceneSchema);
 export type Scenes = z.infer<typeof ScenesSchema>;
 
 /**
- * The envelope the model is asked for. The provider requires an object at the
- * JSON Schema root, so scenes travel wrapped; unwrap before validating.
+ * The envelope a reply is read with, and the one every document in the repo
+ * already writes. The provider requires an object at the JSON Schema root, so
+ * scenes travel wrapped; unwrap before validating.
  *
  * Carries `SceneShapeSchema`, not `SceneSchema`: the refinements are the
  * validator's to apply, in a place the repair pass can hear about them. See the
@@ -388,11 +596,41 @@ export const ScenesEnvelopeSchema = z.object({
   scenes: z.array(SceneShapeSchema).describe('the storyboard, in order; scene 1 is the title scene'),
 });
 
+/**
+ * The envelope the *provider* is shown, and the only thing that reaches
+ * `scenesResponseFormat`. Identical to the one above but for the anchors, which
+ * the strict subset has no way to leave out -- so there they are required, and
+ * a model that means "no anchor" has to say `null`.
+ *
+ * That is a demand the prompt makes, not a demand parsing enforces: a reply is
+ * read with `ScenesEnvelopeSchema` above, which does not mind a missing anchor.
+ * The two together are the point -- the model is asked for the strict shape,
+ * and forgiven for the loose one, which is what keeps a storyboard whose only
+ * fault is an omitted `null` from being thrown away.
+ */
+export const ProviderScenesEnvelopeSchema = z.object({
+  scenes: z
+    .array(sceneOf(ProviderShapeSchema))
+    .describe('the storyboard, in order; scene 1 is the title scene'),
+});
+
 /* ──────────────────────────── validation ────────────────────────── */
 
 export type ScenesValidation =
   | { ok: true; scenes: Scenes }
   | { ok: false; errors: string[] };
+
+/**
+ * One `path: message` line per problem -- the form every reporter uses, the
+ * validator and the layout pass alike, so a caller can concatenate the two and
+ * hand the result to the repair prompt as one list.
+ */
+export function issueDetails(error: z.ZodError): string[] {
+  return error.issues.map((issue) => {
+    const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
+    return `${path}: ${issue.message}`;
+  });
+}
 
 /**
  * Validates a storyboard, reporting every problem with its full path so the UI
@@ -403,13 +641,7 @@ export function validateScenes(input: unknown): ScenesValidation {
   if (parsed.success) {
     return { ok: true, scenes: parsed.data };
   }
-  return {
-    ok: false,
-    errors: parsed.error.issues.map((issue) => {
-      const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
-      return `${path}: ${issue.message}`;
-    }),
-  };
+  return { ok: false, errors: issueDetails(parsed.error) };
 }
 
 /* ────────────────────────────── budget ──────────────────────────── */

@@ -1,5 +1,5 @@
 /**
- * rough.js geometry for the eight doodles.
+ * rough.js geometry for the nine doodles.
  *
  * Determinism is a hard requirement: the composition re-renders the same scene
  * on every frame, and a shape whose wobble changed between frames would shimmer
@@ -12,12 +12,20 @@
  *
  * A single shared generator would make each shape's wobble depend on every
  * shape drawn before it -- changing one shape would reshuffle all the rest.
+ *
+ * `crossOut` is the one shape whose drawing is not its own: it is an X over
+ * another shape's bounds, so its geometry is a function of a *neighbour*. Both
+ * the seed and the memo key therefore fold that neighbour's geometry in -- two
+ * crosses at the same array index in two different scenes are different
+ * drawings, and a memo that thought otherwise would hand the second scene the
+ * first scene's X.
  */
 
 import rough from 'roughjs';
 import type { Drawable, OpSet, Options } from 'roughjs/bin/core';
 import type { RoughGenerator } from 'roughjs/bin/generator';
 import { COLOR_VALUES, FILL_VALUES, toBoardLen, toBoardX, toBoardY } from './board.ts';
+import { shapeBox } from './layout.ts';
 import {
   ARM_BELOW,
   ARM_SPREAD,
@@ -62,16 +70,51 @@ export type LabelPlacement = {
 
 /* ──────────────────────────── determinism ───────────────────────── */
 
-/** FNV-1a over the shape's geometry only, so recolouring never reshuffles it. */
-function shapeSeed(shape: Shape): number {
+/** The shape without its colour: what the drawing is made of. */
+function geometryOf(shape: Shape): Record<string, unknown> {
   const { color: _color, ...geometry } = shape;
-  const text = JSON.stringify(geometry);
+  return geometry;
+}
+
+/**
+ * The geometry a shape is drawn from, which for a cross is partly its
+ * neighbour's. Used for the seed and the memo key, never for painting.
+ */
+function drawnFrom(shape: Shape, shapes?: readonly Shape[]): unknown {
+  const own = geometryOf(shape);
+  if (shape.kind !== 'crossOut') {
+    return own;
+  }
+  const target = shapes?.[shape.target];
+  return { ...own, of: target === undefined ? null : geometryOf(target) };
+}
+
+/**
+ * FNV-1a over the shape's geometry only, so recolouring never reshuffles it.
+ * A cross hashes the shape it crosses too, so the X sits the same way on every
+ * frame but differs between one target and another.
+ */
+function shapeSeed(shape: Shape, shapes?: readonly Shape[]): number {
+  const text = JSON.stringify(drawnFrom(shape, shapes));
   let hash = 0x811c9dc5;
   for (let i = 0; i < text.length; i++) {
     hash ^= text.charCodeAt(i);
     hash = Math.imul(hash, 0x01000193);
   }
   return hash >>> 0;
+}
+
+/**
+ * What makes two shapes the same drawing for the memo.
+ *
+ * Colour is part of it -- the paths carry their resolved ink -- but for every
+ * kind except `crossOut` that is all the shape's own fields. Only a cross has
+ * to look outside itself, because only a cross is drawn from somewhere else.
+ */
+function memoKey(shape: Shape, shapes?: readonly Shape[]): string {
+  return shape.kind === 'crossOut'
+    ? JSON.stringify([shape, drawnFrom(shape, shapes)])
+    : JSON.stringify(shape);
 }
 
 /* ───────────────────────────── plumbing ─────────────────────────── */
@@ -171,7 +214,12 @@ function cloudPath(cx: number, cy: number, w: number, h: number): string {
   return commands.join(' ');
 }
 
-function buildDrawables(gen: RoughGenerator, shape: Shape, opts: Options): Drawable[] {
+function buildDrawables(
+  gen: RoughGenerator,
+  shape: Shape,
+  opts: Options,
+  shapes?: readonly Shape[],
+): Drawable[] {
   switch (shape.kind) {
     case 'box':
       // Widths are a percent of board width and heights of board height, so a
@@ -239,6 +287,27 @@ function buildDrawables(gen: RoughGenerator, shape: Shape, opts: Options): Drawa
         gen.path(body, { ...opts, fill: undefined }),
       ];
     }
+    case 'crossOut': {
+      // Corner to corner over the target's own bounds, which is what makes it
+      // read as "this one, no" rather than as a stray diagonal. A target that
+      // is not there, or is itself a cross, draws nothing -- `layOutScenes`
+      // reports that so the model can be asked to fix it, but the answer here
+      // is never to guess at some other shape on its behalf.
+      const target = shapes?.[shape.target];
+      if (target === undefined || target.kind === 'crossOut') {
+        return [];
+      }
+      const box = shapeBox(target, shapes);
+      if (box === null) {
+        return [];
+      }
+      return [
+        gen.path(
+          `${segment(box.x1, box.y1, box.x2, box.y2)} ${segment(box.x1, box.y2, box.x2, box.y1)}`,
+          opts,
+        ),
+      ];
+    }
     case 'label':
       // Labels are text, not geometry; see `labelPlacement`.
       return [];
@@ -249,9 +318,16 @@ function buildDrawables(gen: RoughGenerator, shape: Shape, opts: Options): Drawa
 
 const pathsMemo = new Map<string, DrawnPath[]>();
 
-/** Path data for one shape. Computed once, then reused for every frame. */
-export function shapePaths(shape: Shape): DrawnPath[] {
-  const key = JSON.stringify(shape);
+/**
+ * Path data for one shape. Computed once, then reused for every frame.
+ *
+ * `shapes` is the scene the shape belongs to, and is only read by `crossOut`,
+ * which is drawn from the bounds of the shape it crosses. Passing it for the
+ * other eight costs a lookup and changes nothing -- the memo key does not
+ * mention it, so their cache entries are shared as they always were.
+ */
+export function shapePaths(shape: Shape, shapes?: readonly Shape[]): DrawnPath[] {
+  const key = memoKey(shape, shapes);
   const cached = pathsMemo.get(key);
   if (cached !== undefined) {
     return cached;
@@ -259,11 +335,15 @@ export function shapePaths(shape: Shape): DrawnPath[] {
   const name = shape.color ?? 'ink';
   const strokeColor = COLOR_VALUES[name];
   const fillColor = FILL_VALUES[name];
-  const opts = baseOptions(shapeSeed(shape), strokeColor, FILLED.has(shape.kind) ? fillColor : undefined);
+  const opts = baseOptions(
+    shapeSeed(shape, shapes),
+    strokeColor,
+    FILLED.has(shape.kind) ? fillColor : undefined,
+  );
 
   const gen = rough.generator();
   const paths: DrawnPath[] = [];
-  for (const drawable of buildDrawables(gen, shape, opts)) {
+  for (const drawable of buildDrawables(gen, shape, opts, shapes)) {
     for (const set of drawable.sets) {
       paths.push(emit(gen, set, strokeColor, fillColor));
     }

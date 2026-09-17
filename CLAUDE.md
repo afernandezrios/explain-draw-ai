@@ -66,6 +66,21 @@ validate storyboard → take lock → ensure browser → **synthesize every narr
 
 `sceneSvg()` in `src/lib/svg.ts` turns a scene plus a per-shape draw progress into an SVG. The Remotion composition feeds it per-frame progress from `drawWindows()` (`src/lib/timeline.ts`); the preview route feeds it 1 for everything. Because both go through the same function, the preview cannot disagree with the render about what a scene looks like — keep it that way. Geometry helpers live in `board.ts` (coordinate space, palette, paper), `doodle.ts` (shape → rough.js paths) and `figure.ts` (the stick figure's proportions, shared with the schema's board-extent check).
 
+### The model states relationships; `layout.ts` computes the pixels
+
+The model cannot see what it draws, so the DSL lets a shape name another shape by its index in the same scene (`label.inShape`, `underline.underLabel`, `fromShape`/`toShape` on arrows and connectors, `crossOut.target`, `stickFigure.label`) and `layOutScenes()` in `src/lib/layout.ts` turns those anchors into geometry: text centred in its box and shrunk to fit, line ends snapped onto the edges they name, an underline sized to the words it runs under, a caption written below a figure's feet. Three rules hold it together:
+
+- **It runs on every read path**, in one order: parse against `ScenesShapeSchema` (structure only) → `layOutScenes` → `validateScenes`. Generation (`generateScenes`), the app (`readScenes`) and the worker (`loadScenes`) all do exactly this, so a hand-edited `scenes.json` is laid out like a generated one. The order is load-bearing: the pass can fix what the refinements would refuse, so judging geometry before laying it out would reject a storyboard the renderer would have drawn.
+- **It is a fixed point** — `layOutScenes(layOutScenes(s))` equals `layOutScenes(s)` — because it runs again on every read. A shape with no anchors is returned byte-identical, which is what keeps pre-anchor storyboards and the frozen fixtures unchanged. Any new pass must keep that property: an anchored coordinate that depends on where the ends *currently* are will drift on the second run.
+- **An unresolvable anchor is cleared, not fatal**, and the shape is drawn where the model put it; the pass returns those as `issues`, which `generateScenes` folds into the same repair list as validation errors — but it will not throw away a storyboard over one. `crossOut.target` cannot be cleared (it is required), so an unresolvable one is reported and simply not drawn.
+
+Two more invariants worth keeping:
+
+- **A figure's caption is never materialised as a `label` shape.** It is drawn from the figure (`captionPlacement`, used by both `svg.ts` and the layout pass), because inserting a shape would shift every index after it, and the indices are exactly what the anchors address. `countLabelWords` counts it, so it cannot be used to smuggle words past the per-scene cap.
+- **The anchor fields are where the two schemas split.** `ShapeSchema` (what we parse with) has them `.nullable().optional()`; `ProviderShapeSchema` is derived per-kind from the same `SHAPE_SPECS` via `anchored()` — which *strips* both wrappers before re-applying `null` — because a leftover `.optional()` keeps the field out of `required` and hides it from the model entirely. The prompt is assembled from `SHAPE_KINDS`/`SHAPE_NOTES`, so a new kind documents its own anchors there; the general "shapes address each other by index" rule is prose in `SCENES_SYSTEM_PROMPT` and needs a look when a new anchored field appears.
+
+Text widths come from a generated table (`src/lib/text-metrics.ts`) — regenerate it with `node scripts/generate-caveat-widths.ts` if the bundled face is ever replaced. It is a sum of per-glyph advances, so kerning is not applied and text is measured slightly wide, which is the safe direction for fitting.
+
 ## Environment
 
 `.env.local` is read by the **Next server only**: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `PROJECTS_DIR`, and the `PIPER_*` pair. The app passes its environment on to the worker it spawns, so app renders see them — but the worker does **not** read `.env.local` itself, so a render started from your terminal needs `PIPER_MODELS_DIR`/`PIPER_VOICE` exported in that shell. Relative `PIPER_MODELS_DIR` resolves against the project root, not the working directory.

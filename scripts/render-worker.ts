@@ -67,9 +67,16 @@ import {
   sceneClipName,
   secondsToFrames,
 } from '../src/lib/render-config.ts';
+import { layOutScenes } from '../src/lib/layout.ts';
 import { claimLock, releaseLockIfOwnedBy, type RenderLock } from '../src/lib/render-lock.ts';
 import type { RenderMode, RenderStatus } from '../src/lib/render-status.ts';
-import { checkBudget, validateScenes, type Scene } from '../src/lib/schema.ts';
+import {
+  ScenesShapeSchema,
+  checkBudget,
+  issueDetails,
+  validateScenes,
+  type Scene,
+} from '../src/lib/schema.ts';
 
 const WORKER_DIR = import.meta.dirname;
 const PROJECT_ROOT = path.resolve(WORKER_DIR, '..');
@@ -822,7 +829,17 @@ function loadScenes(args: WorkerArgs): Scene[] {
     throw new Error(`refusing to render: ${scenesPath} is missing or is not valid JSON`);
   }
 
-  const validation = validateScenes(raw);
+  // Parse, lay out, validate: the same three steps the app runs on the way in,
+  // so a storyboard rendered from here is the storyboard the preview showed --
+  // anchors resolved, labels centred, arrow ends on the shapes they name. A
+  // storyboard that was laid out already is unchanged by the pass.
+  const structural = ScenesShapeSchema.safeParse(raw);
+  if (!structural.success) {
+    const details = issueDetails(structural.error).slice(0, 8).join('\n  ');
+    throw new Error(`refusing to render: scenes.json does not match the scene format\n  ${details}`);
+  }
+
+  const validation = validateScenes(layOutScenes(structural.data).scenes);
   if (!validation.ok) {
     const details = validation.errors.slice(0, 8).join('\n  ');
     throw new Error(`refusing to render: scenes.json does not match the scene format\n  ${details}`);

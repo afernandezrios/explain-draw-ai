@@ -20,6 +20,7 @@ import type {
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { FAKE_SCRIPT, fakeScenes } from './fixtures.ts';
+import { layOutScenes } from './layout.ts';
 import { logEvent } from './logger.ts';
 import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from './render-config.ts';
 import type { Script } from './types.ts';
@@ -34,12 +35,18 @@ import {
   MIN_SHAPES_PER_SCENE,
   MIN_TOTAL_SECONDS,
   NARRATION_WPS,
+  ProviderScenesEnvelopeSchema,
   SHAPE_KINDS,
   SHAPE_NOTES,
   ScenesEnvelopeSchema,
   TARGET_TOTAL_SECONDS,
+  checkBudget,
+  countWords,
+  formatClock,
+  issueDetails,
   maxNarrationWords,
   validateScenes,
+  type BudgetCheck,
   type Scene,
   type Scenes,
 } from './schema.ts';
@@ -47,8 +54,12 @@ import {
 export const DEFAULT_BASE_URL = 'https://api.deepseek.com';
 export const DEFAULT_MODEL = 'deepseek-v4-flash';
 
-/** A generate call gets two minutes, then it gives up. */
-export const REQUEST_TIMEOUT_MS = 120_000;
+/**
+ * A generate call gets four minutes, then it gives up. Two of those are the
+ * storyboard: with thinking enabled, one call can run past the old two-minute
+ * mark, and a timeout there loses the whole generate.
+ */
+export const REQUEST_TIMEOUT_MS = 240_000;
 export const MAX_RETRIES = 1;
 
 export type { Script };
@@ -116,9 +127,14 @@ const EMPTY_USAGE: LlmCallUsage = { promptTokens: 0, completionTokens: 0, totalT
 /** Words a ~5 minute spoken script would run to; only a steer for the model. */
 const TARGET_SCRIPT_WORDS = Math.round((TARGET_TOTAL_SECONDS / 60) * 140);
 
-/** Derived, so the prompt cannot quote a range the validator disagrees with. */
-const MIN_SCENES = Math.ceil(TARGET_TOTAL_SECONDS / MAX_SCENE_SECONDS);
-const MAX_SCENES = Math.floor(TARGET_TOTAL_SECONDS / MIN_SCENE_SECONDS);
+/**
+ * Scene counts for scenes of 12-18 seconds -- the middle of the 7-20s range a
+ * scene may run, and what the prompt quotes. The 15-42 counts the hard bounds
+ * allow reach the target only by hugging one edge, and a model that reads them
+ * as "anything in here is fine" lands short; quoted, they are a trap.
+ */
+const TYPICAL_SCENES_LO = Math.round(TARGET_TOTAL_SECONDS / 18);
+const TYPICAL_SCENES_HI = Math.round(TARGET_TOTAL_SECONDS / 12);
 
 export const SCRIPT_SYSTEM_PROMPT = [
   'You write scripts for short hand-drawn whiteboard explainer videos.',
@@ -178,14 +194,18 @@ export const SCENES_SYSTEM_PROMPT = [
   '',
   'Rules:',
   `- every scene lasts ${MIN_SCENE_SECONDS} to ${MAX_SCENE_SECONDS} seconds`,
-  `- keep all label text in a scene to ${MAX_LABEL_WORDS} words or fewer, in total`,
+  `- keep all the words written in a scene to ${MAX_LABEL_WORDS} words or fewer, in total: every label, plus every stickFigure caption`,
   `- label sizes run from ${MIN_LABEL_SIZE} to ${MAX_LABEL_SIZE}`,
+  '- shapes address each other by index: `label.inShape`, `underline.underLabel`, and `fromShape`/`toShape` on arrows and connectors each take the position of another shape in the SAME scene\'s "shapes" array, counting from 0, or null for none. Use them for every relationship the scene shows -- a label centred in its box, an arrow that really lands on the server, a line under the words it underlines. Count that index yourself, from the start of the array: an index pointing at the wrong shape is worse than null',
+  '- the coordinates you give an anchored shape are a starting point -- a label inside a shape is centred in it and shrunk until it fits, and an anchored line has its ends moved onto its shapes. Put them roughly where they belong and let the anchor do the work',
+  '- give every stickFigure a `label` naming what it stands for, so no figure is left anonymous',
+  '- when the narration calls something broken, cancelled or removed, draw a `crossOut` across it rather than making your own X out of lines; list it AFTER the shape it crosses, since shapes are drawn in order',
   '- every scene carries a "narration": the words a voice speaks aloud while that scene is on screen, and the only thing the viewer hears',
   `- size each narration to its own scene at ${NARRATION_WPS} words per second, rounded DOWN to a whole word. The full budget: ${NARRATION_BUDGET_TABLE}`,
   `- never round up -- ${narrationRoundingExample()} -- because a narration one word over its scene's budget is rejected`,
   '- leave two or three words of headroom under the budget rather than writing right up to it: a scene whose narration ends early is fine, a narration that cannot be spoken in the time the scene is on screen is not',
   '- write narration as plain spoken English in full sentences: it is read aloud, so no headings, no lists, no stage directions',
-  `- aim for about ${TARGET_TOTAL_SECONDS} seconds in total; it must land between ${MIN_TOTAL_SECONDS} and ${MAX_TOTAL_SECONDS} seconds, which is roughly ${MIN_SCENES} to ${MAX_SCENES} scenes`,
+  `- aim for about ${TARGET_TOTAL_SECONDS} seconds in total, and that total is checked: add up every scene's seconds, and the sum must land between ${MIN_TOTAL_SECONDS} and ${MAX_TOTAL_SECONDS}. Scenes of 12-18 seconds are typical, which is roughly ${TYPICAL_SCENES_LO} to ${TYPICAL_SCENES_HI} scenes -- 9 or 10 short scenes totals under two minutes and is refused. Your best measure is the narration: read at ${NARRATION_WPS} words per second, the script's words are the minutes of your video, so all the scenes' narrations together should re-tell the whole script, not condense it`,
   '- scene 1 is the title scene: it states the topic like a hand-lettered title card',
   '- use color "accent" for the one thing that matters most in a scene and "emphasis" sparingly; null means ordinary dark ink',
   '- spread shapes across the board; do not stack everything in one corner',
@@ -213,13 +233,20 @@ const MAX_STORYBOARD_ATTEMPTS = 2;
  * shapes. Interpolated from the same constants the validator uses, so the
  * reminder cannot drift from the rule.
  */
-function storyboardCapsReminder(): string {
+function storyboardCapsReminder(script: Script): string {
+  const scriptWords = countWords(script.text);
   return (
     '\n\nReminder: count the shapes in every scene -- each one must draw between ' +
     `${MIN_SHAPES_PER_SCENE} and ${MAX_SHAPES_PER_SCENE} of them -- keep each scene's ` +
-    `label text within ${MAX_LABEL_WORDS} words, and keep each scene's narration to the ` +
+    `written words (labels plus stickFigure captions) within ${MAX_LABEL_WORDS} words, ` +
+    `and keep each scene's narration to the ` +
     `word budget for its own length: ${NARRATION_WPS} words per second rounded DOWN to a ` +
-    `whole word (${narrationRoundingExample()}).`
+    `whole word (${narrationRoundingExample()}). The script runs to ${scriptWords} words, ` +
+    `which read aloud at ${NARRATION_WPS} words per second is ` +
+    `${formatClock(Math.round(scriptWords / NARRATION_WPS))} of narration: all the scenes' ` +
+    `narrations together should re-tell the whole script, not condense it, and the ` +
+    `scenes' seconds added together must land between ${formatClock(MIN_TOTAL_SECONDS)} ` +
+    `and ${formatClock(MAX_TOTAL_SECONDS)}.`
   );
 }
 
@@ -248,6 +275,35 @@ function repairInstruction(errors: string[]): string {
   );
 }
 
+/**
+ * The total-duration complaint, rewritten as a repair request. The per-scene
+ * validator cannot see the window -- that is `checkBudget`'s business -- so a
+ * storyboard that is inside every scene rule but outside the window gets this
+ * one specific instruction instead of a generic "make it longer": the script's
+ * own word count is the anchor, because narration is what fills the time.
+ */
+function budgetRepairInstruction(
+  script: Script,
+  budget: Extract<BudgetCheck, { ok: false }>,
+): string {
+  if (budget.roundedSeconds < MIN_TOTAL_SECONDS) {
+    const scriptWords = countWords(script.text);
+    return (
+      `the storyboard totals ${formatClock(budget.roundedSeconds)}, under the ` +
+      `${formatClock(MIN_TOTAL_SECONDS)} minimum: add scenes and lengthen narrations until ` +
+      `the seconds total lands between ${formatClock(MIN_TOTAL_SECONDS)} and ` +
+      `${formatClock(MAX_TOTAL_SECONDS)}. The script runs to ${scriptWords} words -- about ` +
+      `${formatClock(Math.round(scriptWords / NARRATION_WPS))} of narration -- and all the ` +
+      `scenes' narrations together must re-tell the whole script, not condense it`
+    );
+  }
+  return (
+    `the storyboard totals ${formatClock(budget.roundedSeconds)}, over the ` +
+    `${formatClock(MAX_TOTAL_SECONDS)} maximum: shorten or merge scenes until the seconds ` +
+    `total lands between ${formatClock(MIN_TOTAL_SECONDS)} and ${formatClock(MAX_TOTAL_SECONDS)}`
+  );
+}
+
 /* ─────────────────────── provider-strict schemas ────────────────── */
 
 const ScriptEnvelopeSchema = z.object({
@@ -262,7 +318,8 @@ const ScriptEnvelopeSchema = z.object({
 });
 
 let scriptFormat: ReturnType<typeof zodResponseFormat<typeof ScriptEnvelopeSchema>> | null = null;
-let scenesFormat: ReturnType<typeof zodResponseFormat<typeof ScenesEnvelopeSchema>> | null = null;
+let scenesFormat: ReturnType<typeof zodResponseFormat<typeof ProviderScenesEnvelopeSchema>> | null =
+  null;
 
 /**
  * The JSON Schema actually sent to the provider. Built by the SDK's own
@@ -271,6 +328,12 @@ let scenesFormat: ReturnType<typeof zodResponseFormat<typeof ScenesEnvelopeSchem
  * `default`/`minItems`/`maxItems`) and the converter applies those rules by
  * construction. It throws at build time if the schema leaves the subset, which
  * is why these are memoised and why a test asserts the result.
+ *
+ * The storyboard's is built from `ProviderScenesEnvelopeSchema` rather than the
+ * envelope replies are read with, so the model is told about the anchor fields
+ * at all: the strict subset cannot spell "may be absent", so in the schema we
+ * send they are required and the model writes `null`. Reading the reply back is
+ * a separate question, and a looser one -- see `generateScenes`.
  */
 export function scriptResponseFormat() {
   scriptFormat ??= zodResponseFormat(ScriptEnvelopeSchema, 'script');
@@ -278,7 +341,7 @@ export function scriptResponseFormat() {
 }
 
 export function scenesResponseFormat() {
-  scenesFormat ??= zodResponseFormat(ScenesEnvelopeSchema, 'scenes');
+  scenesFormat ??= zodResponseFormat(ProviderScenesEnvelopeSchema, 'scenes');
   return scenesFormat;
 }
 
@@ -305,10 +368,13 @@ const JSON_OBJECT_FORMAT = { type: 'json_object' } as const;
 
 /**
  * Set on fallback calls so the provider's own, lower default cannot truncate a
- * full storyboard mid-JSON: well over anything the ~40-scene DSL needs, well
- * under the model's documented ceiling.
+ * full storyboard mid-JSON. Sized for thinking mode: reasoning tokens come out
+ * of the same budget as the answer, so the cap holds both -- 32k truncated
+ * thinking-on storyboards mid-JSON, while 64k is well over anything the
+ * ~40-scene DSL needs and well under deepseek-v4-flash's documented 384k
+ * output ceiling.
  */
-const FALLBACK_MAX_TOKENS = 32_768;
+const FALLBACK_MAX_TOKENS = 65_536;
 
 function isUnsupportedStructuredFormat(error: unknown): error is APIError {
   return error instanceof APIError && error.status === 400 && /response_format/i.test(error.message);
@@ -334,14 +400,6 @@ function parseJsonContent(content: string): unknown {
   return JSON.parse(fenced ? fenced[1] : trimmed);
 }
 
-/** The same `path: message` shape `validateScenes` reports. */
-function zodIssueDetails(error: z.ZodError): string[] {
-  return error.issues.map((issue) => {
-    const path = issue.path.length > 0 ? issue.path.join('.') : '(root)';
-    return `${path}: ${issue.message}`;
-  });
-}
-
 /* ─────────────────────────── real client ────────────────────────── */
 
 export function resolveModel(): string {
@@ -353,7 +411,7 @@ export function resolveBaseUrl(): string {
 }
 
 export function resolveThinkingMode(): boolean {
-  return process.env.LLM_THINKING_MODE?.trim() === "true" || true;
+  return process.env.LLM_THINKING_MODE?.trim() === "true";
 }
 
 function requireApiKey(): string {
@@ -448,12 +506,20 @@ export class OpenAiLlm implements Llm {
    * Strict structured outputs first; a provider that rejects schema mode gets
    * the same call retried in plain JSON mode. `label` names the artefact in
    * errors the user reads ("the model returned no storyboard").
+   *
+   * The two schemas can differ, which is why there are two type parameters
+   * rather than one: `format` is what the provider is asked to produce, and
+   * `envelope` is what we read a reply with. The constraint says the second may
+   * be the looser of the two -- the provider's storyboard schema requires the
+   * anchor fields, while the one we parse with only allows them -- so what comes
+   * back is always assignable to what the caller asked for, and no cast is
+   * needed to say so.
    */
-  private async requestEnvelope<E>(
+  private async requestEnvelope<P extends E, E>(
     system: string,
     user: string,
     label: 'script' | 'storyboard',
-    format: EnvelopeFormat<E>,
+    format: EnvelopeFormat<P>,
     envelope: z.ZodType<E>,
     /** Appended after the fallback's schema blob, where the model reads last. */
     trailing = '',
@@ -554,7 +620,8 @@ export class OpenAiLlm implements Llm {
     system: string,
     user: string,
     label: 'script' | 'storyboard',
-    format: EnvelopeFormat<E>,
+    /** Read only for its JSON Schema, so what it parses to does not matter. */
+    format: EnvelopeFormat<unknown>,
     envelope: z.ZodType<E>,
     trailing: string,
     attempt = 1,
@@ -584,8 +651,11 @@ export class OpenAiLlm implements Llm {
     try {
       // The JS SDK has no `extra_body` (that is the Python client); the request
       // options' `body` override is how provider-specific fields travel.
-      // DeepSeek V4 thinks by default, and reasoning tokens can eat the budget
-      // and leave `content` empty -- off.
+      // Thinking is on by configuration (LLM_THINKING_MODE): v4-flash without
+      // it under-produces -- 9-scene storyboards a third of the required
+      // length, shape counts one over the cap. Reasoning tokens come out of
+      // the same budget as the answer, which is what `FALLBACK_MAX_TOKENS` is
+      // sized for. Flipping the knob off is the cheap, less compliant mode.
       const thinkingMode = resolveThinkingMode() ? 'enabled' : 'disabled';
       completion = await client.chat.completions.create(body, {
         body: { ...body, thinking: { type: thinkingMode } },
@@ -641,7 +711,7 @@ export class OpenAiLlm implements Llm {
 
     const parsed = envelope.safeParse(json);
     if (!parsed.success) {
-      const details = zodIssueDetails(parsed.error);
+      const details = issueDetails(parsed.error);
       this.recordEnd(base, started, 'invalid-output', usageOf(completion), {
         errorMessage: `The model returned a ${label} that does not match the expected format.`,
         details,
@@ -681,40 +751,64 @@ export class OpenAiLlm implements Llm {
         'storyboard',
         scenesResponseFormat(),
         ScenesEnvelopeSchema,
-        storyboardCapsReminder(),
+        storyboardCapsReminder(script),
         attempt,
       );
 
       // Scenes travel wrapped so the JSON Schema root can be an object; unwrap
-      // before validating, and report problems field by field.
-      const validation = validateScenes(envelope.scenes);
-      if (validation.ok) {
+      // and lay them out before validating, so the validator judges the geometry
+      // that will actually be drawn -- a label centred in its box by the layout
+      // pass is not the label the model wrote down.
+      const laid = layOutScenes(envelope.scenes);
+      const validation = validateScenes(laid.scenes);
+
+      if (!validation.ok) {
+        if (attempt >= MAX_STORYBOARD_ATTEMPTS) {
+          // The model answered and was paid for it; the rejection is on our side.
+          const lastCall = this.callLog.at(-1);
+          logEvent('error', {
+            event: 'llm.error',
+            label: 'storyboard',
+            model: lastCall?.model ?? resolveModel(),
+            mode: lastCall?.mode ?? 'json_schema',
+            attempt,
+            durationMs: lastCall?.durationMs ?? 0,
+            errorKind: 'invalid-output',
+            errorMessage: 'The model returned a storyboard that does not match the scene format.',
+            details: validation.errors,
+          });
+          throw new LlmError(
+            'invalid-output',
+            'The model returned a storyboard that does not match the scene format.',
+            validation.errors,
+          );
+        }
+        const errors = [...laid.issues, ...validation.errors];
+        logEvent('warn', { event: 'storyboard.rejected', attempt, errors });
+        // The repair carries the same title and script, plus what the validator
+        // said about specific scenes.
+        user = request + repairInstruction(errors);
+        continue;
+      }
+
+      // The storyboard is drawable. Two complaints can still be worth one
+      // repair ask: an unresolved anchor -- the pass cleared it, so the shape
+      // is drawn where the model put it -- and a total outside the window,
+      // which the per-scene validator cannot see because only `checkBudget`
+      // watches it. One ask is worth it; a second round that could throw the
+      // whole storyboard away over a stray index or a still-short total is
+      // not, so at the last attempt the storyboard is taken as it is -- the
+      // app refuses a render outside the window and offers Regenerate.
+      const budget = checkBudget(validation.scenes);
+      const complaints = [
+        ...(budget.ok ? [] : [budgetRepairInstruction(script, budget)]),
+        ...laid.issues,
+      ];
+      if (complaints.length === 0 || attempt >= MAX_STORYBOARD_ATTEMPTS) {
         return validation.scenes;
       }
-      if (attempt >= MAX_STORYBOARD_ATTEMPTS) {
-        // The model answered and was paid for it; the rejection is on our side.
-        const lastCall = this.callLog.at(-1);
-        logEvent('error', {
-          event: 'llm.error',
-          label: 'storyboard',
-          model: lastCall?.model ?? resolveModel(),
-          mode: lastCall?.mode ?? 'json_schema',
-          attempt,
-          durationMs: lastCall?.durationMs ?? 0,
-          errorKind: 'invalid-output',
-          errorMessage: 'The model returned a storyboard that does not match the scene format.',
-          details: validation.errors,
-        });
-        throw new LlmError(
-          'invalid-output',
-          'The model returned a storyboard that does not match the scene format.',
-          validation.errors,
-        );
-      }
-      logEvent('warn', { event: 'storyboard.rejected', attempt, errors: validation.errors });
-      // The repair carries the same title and script, plus what the validator
-      // said about specific scenes.
-      user = request + repairInstruction(validation.errors);
+      logEvent('warn', { event: 'storyboard.rejected', attempt, errors: complaints });
+      user = request + repairInstruction(complaints);
     }
   }
 }
@@ -732,7 +826,7 @@ function asLlmError(error: unknown, label: string): LlmError {
     return new LlmError(
       'invalid-output',
       `The model returned a ${label} that does not match the expected format.`,
-      zodIssueDetails(error),
+      issueDetails(error),
     );
   }
   return new LlmError('request-failed', describeApiError(error));
