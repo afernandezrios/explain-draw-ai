@@ -8,6 +8,16 @@ Text → LLM (script + scene list) → zod validation → Piper speaks each scen
 narration on this machine → Remotion + rough.js draw each scene with its audio
 baked into the clip → ffmpeg joins the scene clips into `out.mp4`.
 
+## Demo
+
+`demo.mp4` is a real output of this pipeline, generated from the prompt:
+
+> I want to learn about software system design. Starting from a single
+> client/server architecture with a few users to reliable distributed systems
+> with millions of users.
+
+[▶ Watch demo.mp4](demo.mp4)
+
 ## What you need
 
 - **Node 24** (the render worker is TypeScript run directly by Node) and npm.
