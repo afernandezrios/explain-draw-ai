@@ -1,9 +1,24 @@
 /*
- * The same handwriting face the renderer uses, served from public/fonts, so the
+ * Quartz -- the app's single stylesheet.
+ *
+ * The values are literal, not deltas: there is no UI framework and no web font,
+ * so this file is the whole visual contract, hand-rolled against
+ * _bmad-output/planning-artifacts/ux-designs/ux-explain-draw-ai-2026-09-17/DESIGN.md
+ * (and its EXPERIENCE.md for behaviour). Where the approved shell disagrees with
+ * the two spines, the spines win.
+ *
+ * Two rules the file is built to protect:
+ *   - Chrome is the system UI face everywhere. Caveat is never chrome -- it
+ *     belongs to the storyboard artwork, where the preview route serves its own
+ *     copy of the face inside the SVG.
+ *   - A resting card separates by fill (paper on a tinted pane), never by
+ *     shadow. Exactly one object in a pane is elevated: the mat.
+ */
+
+/* The same handwriting face the renderer uses, served from public/fonts, so the
  * app does not need the network to look like the video. The SVG preview carries
  * its own copy of this file (see the preview-svg route) and renders in an <img>,
- * where a page-level @font-face does not apply.
- */
+ * where a page-level @font-face does not apply. */
 @font-face {
   font-family: 'Caveat';
   font-style: normal;
@@ -13,15 +28,88 @@
 }
 
 :root {
-  --paper: #fdfdfb;
-  --ink: #1f2933;
-  --muted: #64748b;
-  --line: #dfe3e8;
-  --accent: #2563eb;
-  --emphasis: #dc2626;
-  --ok: #0f7b4f;
-  --hand: 'Caveat', 'Segoe Print', cursive;
-  --ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Colors: one cool neutral cast in four lightness steps, one indigo, one red. */
+  --c-paper: #ffffff; /* step 255 -- cards, mats, records, messages */
+  --c-pane: #f8f9fc; /* step 248 -- the main content ground */
+  --c-bar: #f4f5f9; /* step 244 -- the toolbar */
+  --c-sidebar: #eff0f4; /* step 239 -- the sidebar */
+  --c-sunken: #e6e9f2; /* inset fills: the job card and the status pill */
+  --c-paper-draw: #fdfdfb; /* the paper inside storyboard artwork only */
+
+  /* Lines: four weights, one job each. */
+  --c-line: #e4e7ef; /* structural hairline */
+  --c-line-soft: #eceef5; /* sub-hairline inside a card */
+  --c-line-strong: #dfe3ec; /* control borders */
+  --c-line-filled: #dbe0ec; /* border of a filled control */
+  --c-line-hover: #ccd2e0; /* hover / active border on a control */
+  --c-separator: #c6cbd8; /* mid-dot and slash separators inside a meta line */
+
+  /* Text: one ink, three weights, plus the family variants. */
+  --c-ink: #12151c;
+  --c-muted: #5c6470;
+  --c-quiet: #7b8391;
+  --c-faint: #8b93a1;
+  --c-nav-ink: #3d434e;
+  --c-nav-icon: #79808d;
+  --c-idle: #9aa1ad;
+  --c-placeholder: #a9b0bd;
+
+  /* Accent: one indigo with exactly three jobs -- active nav, current scene,
+   * primary action. */
+  --c-accent: #4f46e5;
+  --c-accent-hover: #4338ca;
+  --c-accent-soft: #e3e7fd;
+  --c-accent-ring: rgba(79, 70, 229, 0.16);
+  --c-accent-disabled: #e4e6f3;
+  --c-accent-disabled-line: #dcdff0;
+  --c-accent-disabled-ink: #a2a7c4;
+
+  /* Danger is message severity only: a left rule and an icon. */
+  --c-danger: #b42318;
+
+  --c-progress-track: #d9dde9;
+  --c-control-hover: #f4f5fa;
+
+  /* Ghosted empty artifacts. */
+  --c-ghost-art: #f1f3f8;
+  --c-ghost-board: #f6f8fc;
+  --c-ghost-ink: #e4e8f2;
+  --c-ghost-bar: #eceef5;
+  --c-line-art: #eceef4;
+
+  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Radii: controls are 8px, cards 12px. */
+  --r-sm: 4px;
+  --r: 8px;
+  --r-md: 10px;
+  --r-lg: 12px;
+  --r-full: 9999px;
+
+  /* The spacing rhythm, plus the named pane metrics. */
+  --sp-1: 4px;
+  --sp-2: 6px;
+  --sp-3: 8px;
+  --sp-4: 10px;
+  --sp-5: 12px;
+  --sp-6: 16px;
+  --sp-7: 20px;
+  --sp-9: 28px;
+  --pane-gutter: 28px;
+  --pane-head-top: 22px;
+  --pane-head-bottom: 16px;
+  --pane-foot-top: 16px;
+  --pane-foot-bottom: 26px;
+  --sidebar-width: 220px;
+  --toolbar-height: 46px;
+  --control-height: 34px;
+  --control-height-sm: 30px;
+  --control-height-lg: 36px;
+  --row-gap: 8px;
+  --row-gap-loose: 14px;
+  --shell-min-width: 1024px;
+  --pane-max-width: 1100px;
 }
 
 * {
@@ -30,338 +118,1089 @@
 
 body {
   margin: 0;
-  background: #f4f5f7;
-  color: var(--ink);
-  font-family: var(--ui);
-  font-size: 15px;
-  line-height: 1.5;
+  color: var(--c-ink);
+  font-family: var(--font-ui);
+  font-size: 13.5px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
 }
 
-.wrap {
-  max-width: 1080px;
-  margin: 0 auto;
-  padding: 28px 20px 80px;
+/* The document ground (see layout.tsx): the pane's own tint, and no frame. */
+body.app-ground {
+  background: var(--c-pane);
 }
 
-.app-header h1 {
-  font-family: var(--hand);
-  font-size: 44px;
-  margin: 0;
-  letter-spacing: 0.5px;
+/*
+ * Every control takes a visible focus indicator. The field's own is specified
+ * below (border plus ring); everything else takes this outline, so a nav item,
+ * a thumbnail or a button is never reachable without a mark. The active
+ * thumbnail's crisp edge is a selection state and stays distinguishable -- it
+ * is a border, this is an outline offset from it.
+ */
+:focus-visible {
+  outline: 2px solid var(--c-accent);
+  outline-offset: 1px;
 }
 
-.app-header p {
-  margin: 4px 0 24px;
-  color: var(--muted);
+/* ───────────────────────────── shell ───────────────────────────── */
+
+/*
+ * Three regions and a footer, filling the viewport. Below the shell's min-width
+ * nothing reflows: the document scrolls horizontally and the layout is clipped.
+ */
+.shell {
+  height: 100vh;
+  min-width: var(--shell-min-width);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--c-pane);
 }
 
-.card {
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  padding: 18px 20px;
-  margin-bottom: 18px;
-}
-
-.card h2 {
-  margin: 0 0 4px;
-  font-size: 15px;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--muted);
-}
-
-.card .hint {
-  margin: 0 0 14px;
-  color: var(--muted);
-  font-size: 13px;
-}
-
-textarea,
-input[type='text'] {
-  width: 100%;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 10px 12px;
-  font-family: var(--ui);
-  font-size: 14px;
-  color: var(--ink);
-  background: #fff;
-  resize: vertical;
-}
-
-textarea:focus,
-input[type='text']:focus {
-  outline: 2px solid rgba(37, 99, 235, 0.35);
-  border-color: var(--accent);
-}
-
-textarea.script {
-  font-family: var(--hand);
-  font-size: 20px;
-  line-height: 1.4;
-  min-height: 190px;
-}
-
-.row {
+.toolbar {
+  flex: 0 0 auto;
+  height: var(--toolbar-height);
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 12px;
+  gap: 11px;
+  padding: 0 var(--row-gap-loose) 0 22px;
+  background: var(--c-bar);
+  border-bottom: 1px solid var(--c-line);
 }
 
-.row.between {
-  justify-content: space-between;
+.app-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  color: var(--c-ink);
 }
 
-.counter {
-  color: var(--muted);
-  font-size: 12px;
+.project-crumb {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-crumb::before {
+  content: '/';
+  margin-right: 8px;
+  color: var(--c-separator);
+}
+
+/* A status readout, not a button: it opens nothing. */
+.render-status-pill {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 11px 5px var(--sp-4);
+  border-radius: var(--r-full);
+  background: var(--c-sunken);
+  border: 1px solid var(--c-line-filled);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+  font-variant-numeric: tabular-nums;
 }
 
-.counter.over {
-  color: var(--emphasis);
+.render-status-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-idle);
+  flex: 0 0 auto;
+}
+
+.render-status-pill i.is-live {
+  background: var(--c-accent);
+}
+
+.shell-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: stretch;
+}
+
+/* ──────────────────────────── sidebar ──────────────────────────── */
+
+.sidebar {
+  flex: 0 0 var(--sidebar-width);
+  width: var(--sidebar-width);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  background: var(--c-sidebar);
+  border-right: 1px solid var(--c-line);
+  padding: var(--sp-6) var(--sp-5) 0;
+}
+
+/* The project title and nothing else: no status line, no second meta line. */
+.sidebar-project {
+  padding: 2px var(--sp-3) 18px;
+}
+
+.sidebar-project h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.005em;
+  color: var(--c-ink);
+  overflow-wrap: anywhere;
+}
+
+.nav-label {
+  padding: 0 9px;
+  margin: 0 0 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--c-faint);
+}
+
+.nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  height: var(--control-height);
+  padding: 0 9px;
+  border: 0;
+  border-radius: var(--r);
+  background: transparent;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--c-nav-ink);
+  text-align: left;
+  cursor: pointer;
+}
+
+.nav-item svg {
+  flex: 0 0 auto;
+  color: var(--c-nav-icon);
+}
+
+.nav-item-state {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-1);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Fill + colour + weight. No bar, no border, no shadow. */
+.nav-item.is-active {
+  background: var(--c-accent-soft);
+  color: var(--c-accent);
   font-weight: 600;
 }
 
-button {
-  font-family: var(--ui);
-  font-size: 14px;
-  font-weight: 500;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  padding: 9px 16px;
+.nav-item.is-active svg,
+.nav-item.is-active .nav-item-state {
+  color: var(--c-accent);
+}
+
+.nav-item:hover:not(.is-active) {
+  background: var(--c-control-hover);
+}
+
+/* ───────────── sidebar foot: the render job, and nothing else ───────────── */
+
+.sidebar-foot {
+  margin-top: auto;
+  border-top: 1px solid var(--c-line);
+  padding: var(--sp-5) var(--sp-3) var(--sp-6);
+}
+
+.job-card {
+  background: var(--c-sunken);
+  border: 1px solid var(--c-line-filled);
+  border-radius: var(--r);
+  padding: var(--sp-4) 11px 11px;
+}
+
+.job-head {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+}
+
+.job-head i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--c-idle);
+  flex: 0 0 auto;
+}
+
+.job-head i.is-live {
+  background: var(--c-accent);
+}
+
+.job-head .button-dismiss {
+  margin-left: auto;
+}
+
+.job-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--c-ink);
+  overflow-wrap: anywhere;
+}
+
+.job-detail {
+  margin: var(--sp-2) 0 0;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--c-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.job-line {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  margin-top: 7px;
+  font-size: 11.5px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--c-quiet);
+  font-variant-numeric: tabular-nums;
+}
+
+.job-line .right {
+  margin-left: auto;
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+.progress-bar-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: 9px;
+}
+
+.progress-bar {
+  flex: 1 1 auto;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--c-progress-track);
+  overflow: hidden;
+}
+
+.progress-bar > i {
+  display: block;
+  height: 100%;
+  background: var(--c-accent);
+  transition: width 0.3s ease;
+}
+
+.progress-number {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--c-accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.button-cancel {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  width: 100%;
+  height: var(--control-height-sm);
+  margin-top: 11px;
+  border: 1px solid #cfd4e2;
+  border-radius: 7px;
+  background: var(--c-paper);
+  color: var(--c-nav-ink);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
   cursor: pointer;
 }
 
-button:hover:not(:disabled) {
-  border-color: var(--muted);
+.button-cancel:hover:not(:disabled) {
+  border-color: #b3bacd;
+  color: var(--c-ink);
 }
 
-button:disabled {
-  opacity: 0.45;
+.button-cancel:disabled {
+  color: var(--c-idle);
+  border-color: var(--c-line);
   cursor: not-allowed;
 }
 
-button.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
-}
-
-button.primary:hover:not(:disabled) {
-  background: #1d4fd7;
-}
-
-button.danger {
-  border-color: var(--emphasis);
-  color: var(--emphasis);
-}
-
-button.ghost {
-  border-color: transparent;
-  background: transparent;
-  padding: 6px 8px;
-}
-
-a.linkbtn {
-  display: inline-block;
-  font-size: 14px;
-  font-weight: 500;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: #fff;
-  color: var(--ink);
-  padding: 9px 16px;
-  text-decoration: none;
-}
-
-a.linkbtn:hover {
-  border-color: var(--muted);
-}
-
-.banner {
-  border-radius: 8px;
-  padding: 10px 14px;
-  margin: 0 0 14px;
-  font-size: 14px;
-  border: 1px solid;
-}
-
-.banner.ok {
-  background: #eefaf3;
-  border-color: #bfe6d2;
-  color: var(--ok);
-}
-
-.banner.bad {
-  background: #fdf1f1;
-  border-color: #f3c9c9;
-  color: var(--emphasis);
-}
-
-.banner.warn {
-  background: #fff8eb;
-  border-color: #f0dcb4;
-  color: #8a5a00;
-}
-
-.banner.muted {
-  background: #f6f7f9;
-  border-color: var(--line);
-  color: var(--muted);
-}
-
-.banner ul {
-  margin: 6px 0 0;
-  padding-left: 18px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-}
-
-.strip {
-  display: flex;
-  gap: 10px;
-  overflow-x: auto;
-  padding: 4px 2px 10px;
-}
-
-.thumb {
+/* 20px, the smallest interactive target in the app -- a deliberate exception
+ * for a mouse-driven single-user tool. */
+.button-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex: 0 0 auto;
-  width: 176px;
-  border: 2px solid var(--line);
-  border-radius: 8px;
-  background: var(--paper);
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--c-idle);
+  cursor: pointer;
+}
+
+.button-dismiss:hover {
+  background: #dde1ec;
+  color: var(--c-muted);
+}
+
+/* ────────────────────────────── pane ───────────────────────────── */
+
+.pane {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--c-pane);
+}
+
+/* Capped and left-aligned to the pane gutter: the board mat is the pane's only
+ * elevated object, so its size is a hierarchy signal rather than a width. */
+.pane-inner {
+  max-width: var(--pane-max-width);
+}
+
+.pane-head {
+  display: flex;
+  align-items: center;
+  gap: var(--row-gap-loose);
+  padding: var(--pane-head-top) var(--pane-gutter) var(--pane-head-bottom);
+}
+
+.pane-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  color: var(--c-ink);
+}
+
+.pane-subtitle {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.pane-body {
+  padding: 2px var(--pane-gutter) var(--pane-foot-bottom);
+}
+
+.pane-foot {
+  padding: var(--pane-foot-top) var(--pane-gutter) var(--pane-foot-bottom);
+}
+
+.pane-foot-meta {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+  flex-wrap: wrap;
+}
+
+.pane-foot-meta .v {
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+.pane-foot-meta .sep {
+  color: var(--c-separator);
+  margin: 0 3px;
+}
+
+.pane-foot-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--row-gap);
+  margin-top: var(--row-gap-loose);
+  flex-wrap: wrap;
+}
+
+/* ───────────────────────────── buttons ─────────────────────────── */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: var(--control-height);
+  padding: 0 13px;
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r);
+  background: var(--c-paper);
+  color: var(--c-ink);
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  line-height: 1;
+  text-decoration: none;
+  cursor: pointer;
+  box-shadow: 0 1px 1px rgba(18, 21, 28, 0.04);
+}
+
+.button:hover:not(:disabled) {
+  background: var(--c-control-hover);
+  border-color: var(--c-line-hover);
+}
+
+.button:disabled {
+  color: var(--c-idle);
+  border-color: var(--c-line);
+  background: var(--c-paper);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.button.primary {
+  background: var(--c-accent);
+  border-color: var(--c-accent);
+  color: var(--c-paper);
+  font-weight: 550;
+  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.28);
+}
+
+.button.primary:hover:not(:disabled) {
+  background: var(--c-accent-hover);
+  border-color: var(--c-accent-hover);
+}
+
+/* A refused action reads as unavailable, not broken: it keeps its place. */
+.button.primary:disabled {
+  background: var(--c-accent-disabled);
+  border-color: var(--c-accent-disabled-line);
+  color: var(--c-accent-disabled-ink);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+
+.button.sm {
+  height: var(--control-height-sm);
+  padding: 0 11px;
+  font-size: 12.5px;
+}
+
+.button.lg {
+  height: var(--control-height-lg);
+  padding: 0 15px;
+}
+
+/* The pane's primary, pushed right in the foot. */
+.pane-foot-controls .button.primary {
+  margin-left: auto;
+}
+
+/* ──────────────────────── banner zone and messages ─────────────── */
+
+/* Collapses to nothing when it holds no messages -- no reserved height. */
+.banner-zone {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: 0 var(--pane-gutter) 2px;
+}
+
+.message {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: var(--sp-4) 11px 11px 13px;
+  background: var(--c-paper);
+  border: 1px solid var(--c-line);
+  border-left: 3px solid var(--c-danger);
+  border-radius: var(--r-md);
+  box-shadow: 0 1px 2px rgba(18, 21, 28, 0.035);
+}
+
+.message.is-info {
+  border-left-color: var(--c-line-strong);
+}
+
+.message-icon {
+  flex: 0 0 auto;
+  width: 17px;
+  height: 17px;
+  margin-top: 2px;
+  color: var(--c-danger);
+}
+
+.message.is-info .message-icon {
+  color: var(--c-faint);
+}
+
+.message-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.message-body p {
+  margin: 0;
+  font-size: 13.5px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--c-ink);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+
+.message-body ul {
+  margin: var(--sp-2) 0 0;
+  padding-left: 18px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--c-quiet);
+}
+
+.message-source {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The origin pane is a link, never a caption. It is a button because it
+ * navigates within the page; it is drawn as a link because that is what it is. */
+.message-source .link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--c-accent);
+  cursor: pointer;
+}
+
+.message-source .link:hover {
+  text-decoration: underline;
+}
+
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 auto;
+}
+
+/* ──────────────────────── scene strip and thumbs ───────────────── */
+
+.scene-strip-wrap {
+  padding: 0 var(--pane-gutter) 4px;
+  border-bottom: 1px solid var(--c-line-soft);
+}
+
+/* The strip scrolls plainly when the storyboard overflows it. The fade at the
+ * clipped edge and the scroll-into-view land with their own spec. */
+.scene-strip {
+  display: flex;
+  gap: var(--sp-4);
+  overflow-x: auto;
+  padding: var(--sp-1) 2px var(--sp-5);
+}
+
+/* White on the tinted ground, one hairline, and no resting shadow. */
+.scene-thumb {
+  flex: 0 0 150px;
+  width: 150px;
   padding: 0;
   overflow: hidden;
-  cursor: pointer;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r);
+  background: var(--c-paper);
+  box-shadow: none;
+  font-family: inherit;
   text-align: left;
+  cursor: pointer;
 }
 
-.thumb.active {
-  border-color: var(--accent);
-}
-
-.thumb img {
+.scene-thumb-art {
   display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: contain;
-  background: var(--paper);
+  background: var(--c-paper-draw);
+  border-bottom: 1px solid var(--c-line-soft);
   pointer-events: none;
 }
 
-.thumb .cap {
-  display: flex;
-  justify-content: space-between;
-  gap: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
-  color: var(--muted);
-  border-top: 1px solid var(--line);
+.scene-thumb-caption {
+  padding: 7px 9px var(--sp-3);
 }
 
-.board {
+.scene-thumb-caption b {
+  display: block;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--c-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.scene-thumb-caption span {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--c-idle);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The crisp edge: border + inset ring read as one solid edge, never a halo. */
+.scene-thumb.is-active {
+  border-color: var(--c-accent);
+  box-shadow: inset 0 0 0 1px var(--c-accent);
+}
+
+.scene-thumb.is-active .scene-thumb-caption b,
+.scene-thumb.is-active .scene-thumb-caption span {
+  color: var(--c-accent);
+  font-weight: 600;
+}
+
+.scene-thumb:hover:not(.is-active) {
+  border-color: var(--c-line-hover);
+  box-shadow: 0 4px 12px rgba(18, 21, 28, 0.09);
+}
+
+/* ───────────────────────── mats: board and video ───────────────── */
+
+/* The pane's only elevated object -- the real thing, held off the ground. */
+.board-mat,
+.video-mat {
+  margin: 18px var(--pane-gutter) 0;
+  padding: var(--sp-4);
+  background: var(--c-paper);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-lg);
+  box-shadow:
+    0 1px 2px rgba(18, 21, 28, 0.05),
+    0 14px 30px rgba(18, 21, 28, 0.08);
+}
+
+.board-artwork {
+  display: block;
   width: 100%;
   aspect-ratio: 16 / 9;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--paper);
   object-fit: contain;
-  display: block;
+  border: 1px solid var(--c-line-art);
+  border-radius: var(--r);
+  background: var(--c-paper-draw);
 }
 
-video {
+.video-mat video,
+.board-mat video {
+  display: block;
   width: 100%;
-  border-radius: 10px;
+  border-radius: var(--r);
   background: #000;
-  display: block;
 }
 
-.progress {
-  height: 8px;
-  background: #eceef1;
-  border-radius: 999px;
+.video-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--row-gap-loose);
+  margin-top: var(--row-gap-loose);
+}
+
+.meta {
+  font-size: 12.5px;
+  font-weight: 400;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.meta code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--c-quiet);
+}
+
+/* ─────────────────────── the Input pane's pieces ───────────────── */
+
+/* The pane's one line of context is the field's own question. */
+.lead {
+  margin: 0 0 var(--row-gap-loose);
+  font-size: 16.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+  color: var(--c-ink);
+}
+
+.field-label {
+  display: block;
+  margin: 0 0 var(--sp-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+.textarea,
+.field {
+  display: block;
+  width: 100%;
+  min-height: 96px;
+  padding: var(--sp-5) var(--row-gap-loose);
+  border: 1px solid var(--c-line-strong);
+  border-radius: var(--r);
+  background: var(--c-paper);
+  color: var(--c-ink);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.textarea::placeholder,
+.field::placeholder {
+  color: var(--c-placeholder);
+}
+
+.textarea:focus,
+.field:focus {
+  outline: none;
+  border-color: var(--c-accent);
+  box-shadow: 0 0 0 3px var(--c-accent-ring);
+}
+
+.textarea:disabled,
+.field:disabled {
+  color: var(--c-quiet);
+  background: var(--c-pane);
+  cursor: not-allowed;
+}
+
+.field {
+  min-height: 0;
+}
+
+.script-field {
+  min-height: 240px;
+  margin-top: var(--sp-6);
+}
+
+.field-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-5);
+  margin-top: 9px;
+}
+
+.input-counter {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The stored topic is a record, not a field. */
+.input-record {
+  padding: var(--row-gap-loose) var(--sp-6) var(--sp-6);
+  background: var(--c-paper);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-md);
+}
+
+.input-record-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-4);
+  padding-bottom: var(--sp-4);
+  margin-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--c-line-soft);
+}
+
+.input-record-head b {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--c-muted);
+}
+
+.input-record-meta {
+  font-size: 11.5px;
+  font-weight: 400;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.input-record p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 400;
+  line-height: 1.6;
+  color: var(--c-ink);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.input-record-foot {
+  margin: var(--sp-4) 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--c-faint);
+}
+
+.input-record-foot b {
+  color: var(--c-muted);
+  font-weight: 600;
+}
+
+.separator-rule {
+  margin-top: var(--control-height-sm);
+  padding-top: var(--sp-7);
+  border-top: 1px solid var(--c-line);
+}
+
+.new-project {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-6);
+}
+
+.new-project .control-note {
+  margin-top: 0;
+  max-width: 340px;
+}
+
+/* ───────────────────── notes under controls ────────────────────── */
+
+/* The honest line under a control that has a cost. */
+.control-note {
+  margin: 13px 0 0;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.control-note b {
+  color: var(--c-muted);
+  font-weight: 600;
+}
+
+/* Sits above the foot of an empty pane, behind a hairline. */
+.empty-note {
+  margin: 18px 0 0;
+  padding-top: 15px;
+  border-top: 1px solid var(--c-line-soft);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--c-quiet);
+}
+
+.empty-note b {
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+/* ─────────────── ghosted empty artifacts: their own shape ─────────────── */
+
+.ghost-thumb {
+  flex: 0 0 150px;
+  width: 150px;
   overflow: hidden;
-  margin: 6px 0 10px;
+  border: 1px solid var(--c-line);
+  border-radius: var(--r);
+  background: var(--c-paper);
 }
 
-.progress > span {
+.ghost-thumb-art {
   display: block;
-  height: 100%;
-  background: var(--accent);
-  transition: width 0.3s ease;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  background: var(--c-ghost-art);
+  border-bottom: 1px solid var(--c-line-soft);
+}
+
+.ghost-thumb-caption {
+  display: block;
+  padding: var(--sp-3) 9px;
+}
+
+.ghost-bar {
+  display: block;
+  height: 7px;
+  border-radius: var(--r-sm);
+  background: var(--c-ghost-bar);
+  width: 74%;
+}
+
+.ghost-bar.is-short {
+  width: 26%;
+  margin-left: auto;
+  margin-top: var(--sp-2);
+}
+
+/* The real layout with every mark muted: no ink, no shadow. */
+.ghost-mat {
+  margin: 18px var(--pane-gutter) 0;
+  padding: var(--sp-4);
+  background: var(--c-paper);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-lg);
+}
+
+.ghost-artwork {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid var(--c-line-art);
+  border-radius: var(--r);
+  background: var(--c-ghost-board);
+}
+
+.ghost-artwork g {
+  fill: none;
+  stroke: var(--c-ghost-ink);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.ghost-paragraphs {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-9);
+}
+
+.ghost-para {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.ghost-line {
+  height: 11px;
+  border-radius: var(--r-sm);
+  background: var(--c-ghost-bar);
+}
+
+.ghost-line.is-med {
+  width: 88%;
+}
+
+.ghost-line.is-short {
+  width: 56%;
+}
+
+/* Video's ghost is its own shape: a timeline of scene blocks. */
+.ghost-timeline {
+  display: flex;
+  align-items: stretch;
+  gap: var(--sp-3);
+  height: 96px;
+  margin: 18px var(--pane-gutter) 0;
+  padding: var(--sp-4);
+  background: var(--c-paper);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-lg);
+}
+
+.ghost-block {
+  border: 1px solid var(--c-line-art);
+  border-radius: var(--r);
+  background: var(--c-ghost-board);
+}
+
+.ghost-note {
+  display: flex;
+  align-items: center;
+  gap: var(--row-gap-loose);
+  flex-wrap: wrap;
+}
+
+.ghost-note p {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--c-quiet);
+}
+
+.ghost-note b {
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+/* ───────────────────── worker log tail, collapsed ──────────────── */
+
+.log-tail {
+  margin-bottom: var(--row-gap-loose);
+}
+
+.log {
+  margin: var(--sp-3) 0 0;
+  padding: var(--sp-4) var(--sp-5);
+  max-height: 260px;
+  overflow: auto;
+  background: var(--c-sunken);
+  border: 1px solid var(--c-line);
+  border-radius: var(--r-sm);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--c-quiet);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /*
  * The bar's width changes several times a second during a render, which is
  * exactly the kind of movement the reduced-motion preference exists to stop.
- * The progress is still reported -- in the text below the bar and through the
- * progressbar's aria-valuenow -- it just stops sliding.
+ * The progress is still reported -- in the percentage beside the bar and
+ * through the progressbar's aria-valuenow -- it just stops sliding.
  */
 @media (prefers-reduced-motion: reduce) {
-  .progress > span {
+  .progress-bar > i {
     transition: none;
   }
-}
-
-.chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 10px;
-}
-
-.chip {
-  font-size: 12px;
-  padding: 3px 9px;
-  border-radius: 999px;
-  border: 1px solid var(--line);
-  color: var(--muted);
-  background: #fff;
-}
-
-.chip.done {
-  border-color: #bfe6d2;
-  background: #eefaf3;
-  color: var(--ok);
-}
-
-.chip.current {
-  border-color: var(--accent);
-  background: #eaf0fe;
-  color: var(--accent);
-  font-weight: 600;
-}
-
-.meta {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.meta code {
-  font-size: 12px;
-  background: #f4f5f7;
-  padding: 2px 5px;
-  border-radius: 4px;
-}
-
-.log {
-  margin: 8px 0 0;
-  padding: 10px 12px;
-  max-height: 260px;
-  overflow: auto;
-  background: #f6f7f9;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--muted);
-  white-space: pre-wrap;
-  word-break: break-word;
 }
