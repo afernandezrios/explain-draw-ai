@@ -16,7 +16,14 @@ export const VIDEO_CODEC = 'h264';
 export const PIXEL_FORMAT = 'yuv420p';
 export const CRF = 18;
 export const X264_PRESET = 'medium';
-export const IMAGE_FORMAT = 'png';
+export const IMAGE_FORMAT = 'jpeg';
+
+/**
+ * Frame capture quality for the JPEG pipeline: 95 is visually transparent for
+ * this content -- flat fills, strokes, text -- while capturing and encoding it
+ * costs far less than PNG. Only meaningful while `IMAGE_FORMAT` is 'jpeg'.
+ */
+export const JPEG_QUALITY = 95;
 
 /**
  * The audio half of that agreement: every clip carries its scene's narration as
@@ -61,9 +68,10 @@ export const PREVIEW_FILENAME = 'preview.mp4';
 export const PREVIEW_CLIP_FILENAME = 'preview-clip.mp4';
 export const CLIPS_DIRNAME = 'clips';
 /**
- * One WAV per scene, worker-owned, beside `clips/`. The worker writes them
- * before bundling, the bundle serves them to the composition, and nothing prunes
- * them -- the same posture as `clips/`.
+ * One WAV per scene, worker-owned, beside `clips/`. Each is synthesized while
+ * the previous scene draws (the first while the composition bundles), and the
+ * bundle serves them to the composition -- so each only has to exist before its
+ * own scene's render. Nothing prunes them, the same posture as `clips/`.
  */
 export const NARRATION_DIRNAME = 'narration';
 

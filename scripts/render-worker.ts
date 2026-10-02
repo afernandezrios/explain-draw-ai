@@ -49,6 +49,7 @@ import {
   fittedSceneSeconds,
   FPS,
   IMAGE_FORMAT,
+  JPEG_QUALITY,
   LOCK_FILENAME,
   MAX_FRAME_CONCURRENCY,
   NARRATION_DIRNAME,
@@ -201,7 +202,12 @@ const { cancelSignal, cancel } = makeCancelSignal();
 let cancelled = false;
 /** ffmpeg during the join, so a cancel does not have to wait for the whole concat. */
 let ffmpegChild: ChildProcess | null = null;
-/** piper during narration synthesis, so cancel does not have to wait for the voice. */
+/**
+ * piper during narration synthesis, so cancel does not have to wait for the
+ * voice -- and, because synthesis is overlapped with the bundle and the renders,
+ * so a failure or a cancel can reach a voice that is still being spoken for a
+ * scene nobody will draw.
+ */
 let piperChild: ChildProcess | null = null;
 
 function requestCancel(): void {
@@ -218,6 +224,23 @@ function requestCancel(): void {
     } catch {
       // Already gone; the exit handler still runs.
     }
+  }
+}
+
+/**
+ * Kills the piper child, if one is speaking. With synthesis overlapped with the
+ * render, a failed or cancelled job can arrive while the *next* scene's voice is
+ * in flight; that voice belongs to this job and must not outlive it. The WAV it
+ * was writing is cleaned up by its own caller's `finally`.
+ */
+function killPiper(): void {
+  if (!piperChild) {
+    return;
+  }
+  try {
+    piperChild.kill('SIGTERM');
+  } catch {
+    // Already gone; the exit handler still runs.
   }
 }
 
@@ -595,8 +618,8 @@ async function requireAudibleTrack(file: string, what: string): Promise<void> {
  * The gate: the WAV's own duration against the scene's frame-rounded length plus
  * `NARRATION_OVERRUN_TOLERANCE_SECONDS`. The voice is never sped up or slowed
  * down to fit, so a narration longer than its scene is refused here and the
- * render stops -- before anything is bundled or drawn -- naming the scene and
- * both durations, rather than being truncated or rushed to fit.
+ * render stops -- before that scene's first frame is drawn -- naming the scene
+ * and both durations, rather than being truncated or rushed to fit.
  *
  * The measurement the gate took is also the function's result, because the scene
  * is rendered for it: a narration that ends early is a scene that ends early,
@@ -641,60 +664,37 @@ async function synthesizeNarration(options: {
   }
 }
 
+type NarrationJob = {
+  /** Resolves with the measured seconds once the WAV passed its gate. */
+  promise: Promise<number>;
+  /** True once the gate passed and the WAV was renamed into place. */
+  isDone: () => boolean;
+};
+
 /**
- * The pre-flight synthesis stage: every narration this job needs, before
- * anything is bundled or drawn.
+ * Speaks one scene's narration as a background job, awaited by the stage that
+ * needs it: the bundle for the first scene, the previous scene's render for the
+ * rest.
  *
- * Unconditional by design -- a full render synthesizes all scenes, a preview
- * only the scene it draws, and neither reuses a WAV already on disk. Running
- * before `bundle()` means an overrun stops the render before a single frame is
- * encoded, and the bundle then serves the very files the composition plays.
+ * Unconditional by design -- a full render narrates every scene, a preview only
+ * the scene it draws, and neither reuses a WAV already on disk -- and never more
+ * than one voice at a time. Each WAV only has to exist before its own scene
+ * draws, so each scene's voice is spoken while the previous one renders.
  *
- * Returns the directory the bundle takes as its public directory, and every WAV
- * it wrote measured in seconds, keyed by storyboard index -- the fit each scene
- * is rendered for, gathered here so the render stage only has to look it up.
+ * The promise gets a no-op catch the moment it is created: the caller awaits it
+ * only after a bundle or a render, and a rejection left unhandled for that long
+ * would crash the process under Node's default unhandled-rejection policy. The
+ * await still rethrows the original error, so an overrun refusal or a failed
+ * piper surfaces exactly where the serial pre-flight stage surfaced it.
  */
-async function synthesizeNarrations(options: {
-  projectDir: string;
-  scenes: Scene[];
-  /** Storyboard indices this job renders: every scene, or just the preview's. */
-  indices: number[];
-}): Promise<{ narrationDir: string; narrationSeconds: Map<number, number> }> {
-  const narrationDir = path.join(options.projectDir, NARRATION_DIRNAME);
-  const narrationSeconds = new Map<number, number>();
-  fs.mkdirSync(narrationDir, { recursive: true });
-  writeStatus({ message: 'Preparing narration...' }, true);
-  process.stdout.write(
-    `[render] synthesizing narration for ${options.indices.length} scene${
-      options.indices.length === 1 ? '' : 's'
-    }\n`,
-  );
-
-  for (const index of options.indices) {
-    abortIfCancelled('narration synthesis');
-    // Written per scene, before the voice starts: one static message for the
-    // whole stage would leave the UI showing the first scene at 0% for the
-    // minutes a full storyboard takes to speak. The terms match the render
-    // stage's -- the storyboard index for `sceneIndex`, and progress over the
-    // whole job -- so the two stages read as one run.
-    writeStatus(
-      {
-        sceneIndex: index,
-        message:
-          options.indices.length > 1
-            ? `Narrating scene ${index + 1} of ${options.scenes.length}...`
-            : `Narrating scene ${index + 1}...`,
-        progress: overallProgress(index, 0, options.scenes.length),
-      },
-      true,
-    );
-    narrationSeconds.set(
-      index,
-      await synthesizeNarration({ scene: options.scenes[index], index, narrationDir }),
-    );
-  }
-
-  return { narrationDir, narrationSeconds };
+function startNarration(scene: Scene, index: number, narrationDir: string): NarrationJob {
+  let done = false;
+  const promise = synthesizeNarration({ scene, index, narrationDir }).then((seconds) => {
+    done = true;
+    return seconds;
+  });
+  promise.catch(() => {});
+  return { promise, isDone: () => done };
 }
 
 /* ─────────────────────────────── main ───────────────────────────── */
@@ -722,9 +722,11 @@ async function renderScene(options: {
     outputPath,
     jobProgress,
   } = options;
-  // The narration was synthesized before the bundle, and the bundle serves the
-  // narration directory as its public directory, so the composition names the
-  // file the way `staticFile` resolves it. One inputProps object reaches both
+  // This scene's narration has already been spoken -- the first's while the
+  // composition bundled, every later scene's while the previous scene drew --
+  // and the bundle serves the narration directory as its public directory, so
+  // the composition names the file the way `staticFile` resolves it. One
+  // inputProps object reaches both
   // `selectComposition` and `renderMedia`: the duration the composition is
   // selected with and the one it is rendered with can never disagree.
   //
@@ -776,6 +778,7 @@ async function renderScene(options: {
       crf: CRF,
       x264Preset: X264_PRESET,
       imageFormat: IMAGE_FORMAT,
+      jpegQuality: JPEG_QUALITY,
       concurrency: MAX_FRAME_CONCURRENCY,
       // The scene's narration is this clip's audio track, so the render is
       // unmuted; `enforceAudioTrack` guarantees the stream is there even if the
@@ -937,25 +940,47 @@ async function main(argv: string[]): Promise<number> {
     await ensureBrowser({ logLevel: 'error' });
     abortIfCancelled('browser start-up');
 
-    // Pre-flight narration, before anything is bundled or drawn: every scene
-    // for a full render, the previewed scene for a preview, none of it reused --
-    // a stale WAV under a rebuilt storyboard is worse than none. The narration
-    // directory becomes the bundle's public directory, so the composition's
-    // `staticFile` names resolve to the WAVs just written.
-    const { narrationDir, narrationSeconds } = await synthesizeNarrations({
-      projectDir: args.projectDir,
-      scenes,
-      indices: previewing ? [args.scene as number] : scenes.map((_, index) => index),
-    });
-    abortIfCancelled('narration synthesis');
+    // Narration is spoken one scene at a time, overlapped with the slow stages:
+    // the first scene's voice runs while the composition bundles, and every
+    // later scene's voice runs while the previous scene draws. Each WAV only has to
+    // exist before its own scene's renderMedia -- the same per-WAV gate and the
+    // same "never reused" rule as ever, just not all up front (a stale WAV under
+    // a rebuilt storyboard is worse than none).
+    const narrationDir = path.join(args.projectDir, NARRATION_DIRNAME);
+    fs.mkdirSync(narrationDir, { recursive: true });
+    const indices = previewing ? [args.scene as number] : scenes.map((_, index) => index);
+    writeStatus({ message: 'Preparing narration...' }, true);
+    process.stdout.write(
+      `[render] narrating ${indices.length} scene${indices.length === 1 ? '' : 's'}, overlapped with rendering\n`,
+    );
+    const firstIndex = indices[0];
+    const firstJob = startNarration(scenes[firstIndex], firstIndex, narrationDir);
+    let narrationJob: NarrationJob | null = firstJob;
 
     process.stdout.write('[render] bundling the composition\n');
     // The narration directory -- not the project folder -- is the bundle's
     // public directory: it is the smallest directory `staticFile` needs, and the
-    // project folder beside it holds hundreds of megabytes of clips. The bundler
-    // copies it in, so what the composition plays is what was just synthesized.
-    const serveUrl = await bundle({ entryPoint: ENTRY_POINT, publicDir: narrationDir });
+    // project folder beside it holds hundreds of megabytes of clips. It is
+    // symlinked rather than copied, so a WAV renamed into place after the bundle
+    // exists is servable the moment its scene renders. On Windows the bundler
+    // copies instead, so each post-bundle WAV is copied into the served
+    // directory before its scene draws (`publishNarration`).
+    const serveUrl = await bundle({
+      entryPoint: ENTRY_POINT,
+      publicDir: narrationDir,
+      symlinkPublicDir: process.platform !== 'win32',
+    });
     abortIfCancelled('bundling');
+
+    /** Windows only: the bundle copied the narration directory, so hand it the WAV. */
+    const publishNarration = (index: number): void => {
+      if (process.platform === 'win32') {
+        fs.copyFileSync(
+          path.join(narrationDir, narrationFileName(index)),
+          path.join(serveUrl, 'public', narrationFileName(index)),
+        );
+      }
+    };
 
     if (previewing) {
       const sceneIndex = args.scene as number;
@@ -965,6 +990,15 @@ async function main(argv: string[]): Promise<number> {
       // clip.
       const clipPath = path.join(args.projectDir, PREVIEW_CLIP_FILENAME);
       const previewPath = path.join(args.projectDir, PREVIEW_FILENAME);
+      // Written only while the voice is genuinely still being spoken: a WAV
+      // already in place would leave this message up until the render replaces
+      // it.
+      if (!firstJob.isDone()) {
+        writeStatus({ sceneIndex, message: `Narrating scene ${sceneIndex + 1}...`, progress: 0 }, true);
+      }
+      const narrationSeconds = await firstJob.promise;
+      abortIfCancelled('narration synthesis');
+      publishNarration(sceneIndex);
       try {
         await renderScene({
           serveUrl,
@@ -972,7 +1006,7 @@ async function main(argv: string[]): Promise<number> {
           index: sceneIndex,
           totalScenes: 1,
           completedScenes: 0,
-          narrationSeconds: narrationSeconds.get(sceneIndex) as number,
+          narrationSeconds,
           outputPath: clipPath,
           // A preview is its own job of one scene, so its progress is the
           // scene's own: an index over one total would read 100% immediately.
@@ -997,21 +1031,61 @@ async function main(argv: string[]): Promise<number> {
 
     const clipFiles: string[] = [];
     for (let index = 0; index < scenes.length; index++) {
+      abortIfCancelled('narration synthesis');
+      // This scene's voice was started during the previous scene's render (or,
+      // for the first scene, before the bundle). Waiting here is what makes the
+      // WAV exist before its scene draws -- and an overrun still lands before
+      // this scene's first frame, like it always did.
+      const job = narrationJob ?? startNarration(scenes[index], index, narrationDir);
+      narrationJob = null;
+      // Written only while the voice is genuinely still being spoken: a WAV
+      // already in place would leave this message up until the render replaces
+      // it. The terms match the render stage's -- the storyboard index for
+      // `sceneIndex`, and progress over the whole job -- so the two read as one
+      // run.
+      if (!job.isDone()) {
+        writeStatus(
+          {
+            sceneIndex: index,
+            message: `Narrating scene ${index + 1} of ${scenes.length}...`,
+            progress: overallProgress(index, 0, scenes.length),
+          },
+          true,
+        );
+      }
+      const narrationSeconds = await job.promise;
+      abortIfCancelled('narration synthesis');
+      publishNarration(index);
+
+      // The next scene's voice starts now, so piper speaks while this scene
+      // draws -- and never more than one piper at a time.
+      if (index + 1 < scenes.length) {
+        narrationJob = startNarration(scenes[index + 1], index + 1, narrationDir);
+      }
+
       const clip = path.join(clipsDir, sceneClipName(index));
-      await renderScene({
-        serveUrl,
-        scene: scenes[index],
-        index,
-        totalScenes: scenes.length,
-        completedScenes: index,
-        narrationSeconds: narrationSeconds.get(index) as number,
-        outputPath: clip,
-        jobProgress: (sceneProgress) => overallProgress(index, sceneProgress, scenes.length),
-      });
-      // Checked before the clip joins the list: the join is `-c copy`, so a clip
-      // that lost its narration -- a missing stream, or a track of pure silence
-      // -- would ship a video that is mute for that scene's whole length.
-      await requireAudibleTrack(clip, `the clip for scene ${index + 1}`);
+      try {
+        await renderScene({
+          serveUrl,
+          scene: scenes[index],
+          index,
+          totalScenes: scenes.length,
+          completedScenes: index,
+          narrationSeconds,
+          outputPath: clip,
+          jobProgress: (sceneProgress) => overallProgress(index, sceneProgress, scenes.length),
+        });
+        // Checked before the clip joins the list: the join is `-c copy`, so a clip
+        // that lost its narration -- a missing stream, or a track of pure silence
+        // -- would ship a video that is mute for that scene's whole length.
+        await requireAudibleTrack(clip, `the clip for scene ${index + 1}`);
+      } catch (error) {
+        // A failed render must not leave the next scene's voice speaking into a
+        // project nobody is rendering. (A cancel killed it already, in
+        // requestCancel.)
+        killPiper();
+        throw error;
+      }
       clipFiles.push(clip);
       writeStatus(
         {
@@ -1032,6 +1106,10 @@ async function main(argv: string[]): Promise<number> {
     );
     return finish('done', 'Render complete.');
   } catch (error) {
+    // A bundle or verify failure can leave the next scene's voice mid-speech;
+    // it belongs to this job and must not outlive it. (A cancel killed it
+    // already, in requestCancel.)
+    killPiper();
     if (error instanceof CancelledError || cancelled) {
       // Finished clips stay on disk: a retry re-renders every scene, so they
       // are a starting point for a person, not for the next run.

@@ -5,7 +5,7 @@ flat diagram scenes, and a ~5 minute explainer video with spoken narration, all
 on your own machine.
 
 Text → LLM (script + scene list) → zod validation → Piper speaks each scene's
-narration on this machine → Remotion + rough.js draw each scene with its audio
+narration on this machine while Remotion draws the previous scene, the audio
 baked into the clip → ffmpeg joins the scene clips into `out.mp4`.
 
 ## Demo
