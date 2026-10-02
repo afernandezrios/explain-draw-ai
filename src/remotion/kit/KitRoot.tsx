@@ -24,6 +24,7 @@ import { FlowScene, type FlowSceneProps } from './scenes/FlowScene.tsx';
 import { TopologyScene, type TopologySceneProps } from './scenes/TopologyScene.tsx';
 import { SequenceScene, type SequenceSceneProps } from './scenes/SequenceScene.tsx';
 import { CodeScene, type CodeSceneProps } from './scenes/CodeScene.tsx';
+import { ConceptScene, type ConceptSceneProps } from './scenes/ConceptScene.tsx';
 import { PrimitivesGallery } from './PrimitivesGallery.tsx';
 
 /** Eight seconds: long enough for every scene type to finish its own pacing. */
@@ -163,6 +164,37 @@ const CODE: CodeSceneProps = {
   accent: 'green',
 };
 
+const CONCEPT: ConceptSceneProps = {
+  eyebrow: 'Performance',
+  title: 'Why a cache makes reads feel instant',
+  explanation:
+    'A cache keeps the data a service reads most often close to the consumer, so most reads never travel to the origin.',
+  terms: [{ text: 'close to the consumer' }, { text: 'origin' }],
+  keyPoints: [
+    'A hit is answered where the request arrives, in a fraction of the time.',
+    'A miss falls through to the origin, and the answer is kept for the next reader.',
+  ],
+  visual: {
+    nodes: [
+      { id: 'consumer', label: 'Consumer', icon: 'user', col: 0, row: 0, accent: 'cyan' },
+      { id: 'cache', label: 'Cache', icon: 'layers', col: 1, row: 0, accent: 'amber', emphasis: true },
+      { id: 'origin', label: 'Origin', sublabel: 'slow', icon: 'database', col: 2, row: 0, accent: 'green' },
+    ],
+    links: [
+      { from: 'consumer', to: 'cache', label: 'read' },
+      { from: 'cache', to: 'consumer', label: 'hit', dashed: true },
+      { from: 'cache', to: 'origin', label: 'miss' },
+      { from: 'origin', to: 'cache', label: 'fill', dashed: true },
+    ],
+  },
+  takeaway: { body: 'The cache does not make the origin faster; it makes the origin unnecessary.' },
+  // The demo is watched in the Studio, where no narration is pacing it. A real
+  // render leaves this out and lets the scene take its beats from the length
+  // the narration gave it -- which is a quick cascade, by design.
+  pace: { staggerSeconds: 0.5 },
+  accent: 'amber',
+};
+
 export const KitRoot: React.FC = () => (
   <Folder name="Kit">
     {/* The markup layer's bench. First in the folder because it is the level
@@ -229,6 +261,15 @@ export const KitRoot: React.FC = () => (
       width={CANVAS.width}
       height={CANVAS.height}
       defaultProps={CODE}
+    />
+    <Composition
+      id="KitConcept"
+      component={ConceptScene}
+      durationInFrames={DEMO_FRAMES}
+      fps={CANVAS.fps}
+      width={CANVAS.width}
+      height={CANVAS.height}
+      defaultProps={CONCEPT}
     />
   </Folder>
 );

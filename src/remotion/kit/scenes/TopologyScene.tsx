@@ -11,18 +11,24 @@
  * a node appears after everything that points at it. That is why a topology
  * cannot arrive in the wrong order -- there is no second place to state it, so
  * there is nothing to disagree with the picture.
+ *
+ * The cell maths is `lib/grid.ts` and the reciprocal bend is `lib/graph.ts`,
+ * both shared with the concept scene's figure: the same cells cannot mean two
+ * different rectangles, or two different ways of pulling a pair of arrows
+ * apart.
  */
 
 import React from 'react';
 import { useCurrentFrame, useVideoConfig } from 'remotion';
 import type { Accent } from '../tokens.ts';
 import type { ThemeProp } from '../theme.tsx';
-import { Frame, FrameCaption, useFrameBox, type FrameBox } from '../layout/Frame.tsx';
+import { Frame, FrameCaption, useFrameBox } from '../layout/Frame.tsx';
 import { DiagramNode } from '../primitives/DiagramNode.tsx';
 import { Edge, EdgeLayer } from '../primitives/Edge.tsx';
 import type { IconName } from '../primitives/Icon.tsx';
-import { segmentBetween, type Rect } from '../lib/geometry.ts';
-import { depthByNode } from '../lib/graph.ts';
+import { segmentBetween } from '../lib/geometry.ts';
+import { depthByNode, reciprocalBend } from '../lib/graph.ts';
+import { gridBounds, gridRect, type GridBounds } from '../lib/grid.ts';
 import { ramp, revealStyle } from '../animation/presets.ts';
 import { paceReveals, toFrames, type ScenePace, type Timing } from '../animation/timing.ts';
 
@@ -107,11 +113,12 @@ const TopologyBody: React.FC<{
   const { fps, durationInFrames } = useVideoConfig();
   const box = useFrameBox();
 
-  const grid = {
-    columns: columns ?? Math.max(1, ...nodes.map((node) => node.col + (node.span ?? 1))),
-    rows: rows ?? Math.max(1, ...nodes.map((node) => node.row + 1)),
+  const auto = gridBounds(nodes);
+  const grid: GridBounds = {
+    columns: columns ?? auto.columns,
+    rows: rows ?? auto.rows,
   };
-  const placed = nodes.map((node) => ({ node, rect: nodeRect(node, grid, box) }));
+  const placed = nodes.map((node) => ({ node, rect: gridRect(node, grid, box) }));
   const rects = new Map(placed.map((entry) => [entry.node.id, entry.rect]));
 
   const depths = depthByNode(
@@ -185,37 +192,3 @@ const TopologyBody: React.FC<{
     </>
   );
 };
-
-/**
- * Two edges between the same pair of nodes would otherwise be drawn on top of
- * each other and read as one line. They are bowed to opposite sides, chosen by
- * the node ids rather than by which happens to be written first, so the picture
- * does not change when the edge list is reordered.
- */
-function reciprocalBend(edge: TopologyEdge, edges: TopologyEdge[]): number {
-  const reciprocal = edges.some((other) => other.from === edge.to && other.to === edge.from);
-  if (!reciprocal) {
-    return 0;
-  }
-  return edge.from < edge.to ? 36 : -36;
-}
-
-function nodeRect(
-  node: TopologyNode,
-  grid: { columns: number; rows: number },
-  box: FrameBox,
-): Rect {
-  const cellW = box.width / grid.columns;
-  const cellH = box.height / grid.rows;
-  // The gap between cells: a node never fills its cell, so two neighbours have
-  // room between them for the arrow that joins them.
-  const inset = Math.min(22, cellW * 0.06, cellH * 0.08);
-  const left = node.col * cellW + inset;
-  const right = Math.min((node.col + (node.span ?? 1)) * cellW, box.width) - inset;
-  return {
-    x: left,
-    y: node.row * cellH + inset,
-    w: Math.max(80, right - left),
-    h: Math.max(72, cellH - inset * 2),
-  };
-}

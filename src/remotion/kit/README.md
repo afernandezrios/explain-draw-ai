@@ -40,7 +40,7 @@ architecture:
       |
   layout/          Frame (the scene shell) and Stack (row/column/grid/centre)
       |
-  scenes/          six scene types: what a video is made of
+  scenes/          seven scene types: what a video is made of
       |
   KitRoot.tsx      the demos that register those scene types as compositions
 ```
@@ -53,16 +53,20 @@ resolved; a component asks for `theme.accent[accent]`, never for `#4d8dff`.
 **`primitives/` has two levels.** The markup primitives (Box, Label, Highlight,
 Arrow, Node, Connection, CodeBlock) draw one thing each for markup that owns its
 own coordinates; the scene-level components (Text, Surface, Icon, Pill,
-DiagramNode, Edge, Callout) are what the six scene types are built from. The
+DiagramNode, Edge, Callout) are what the seven scene types are built from. The
 markup level is documented in its own section below.
 
 **`lib/` has no React in it.** `geometry.ts` answers two questions -- where does
 a line leave a box, and where is a point part-way along a path -- and answering
 them as plain functions is what lets `FlowScene` and `TopologyScene` place
-edges without either of them re-deriving the maths.
+edges without either of them re-deriving the maths. The rest is the same idea
+one level up: `grid.ts` turns a node's `col`/`row` into a rectangle (shared by
+`TopologyScene` and `ConceptScene`, which is why neither of them owns the
+cell maths), and `graph.ts` reads reveal order and pair-bends out of an edge
+list.
 
 **`animation/` is a vocabulary, not a per-scene choice.** Six reveal presets and
-one pacing function exist so that the six scene types feel like one video. A
+one pacing function exist so that the seven scene types feel like one video. A
 scene says *how many* beats it has; `paceReveals` decides when they land, using
 the scene's actual `durationInFrames` -- which is the narration's measured
 length, not a number the scene knows. The default is a quick cascade, so the
@@ -101,7 +105,7 @@ Both pace themselves with `paceReveals(count, { fps, durationInFrames })` and
 apply `revealStyle(preset, frame, beats[i])` -- inline for a positioned
 element, `<Reveal>` for one in flow.
 
-## The six scene types
+## The seven scene types
 
 | Scene | The picture | The data |
 | --- | --- | --- |
@@ -111,11 +115,19 @@ element, `<Reveal>` for one in flow.
 | `TopologyScene` | Several things on a grid and the wiring between them | `nodes[]` with `col`/`row`/`span`, `edges[]` |
 | `SequenceScene` | Who talks to whom, in order, down a timeline | `actors[]`, `messages[]` with a `kind` |
 | `CodeScene` | A listing in a window, optionally line by line, with a note beside it | `code`, `language`, `highlight[]`, `aside` |
+| `ConceptScene` | One idea in words, beside a small figure of it | `explanation`, `terms[]`, `keyPoints[]`, `visual` nodes/links, `takeaway` |
 
 Between them they cover REST paths, queues, event flows, distributed
 topologies, design patterns and algorithm steps. What they have in common is
 that the *author* states structure and the *component* computes pixels: a
 `TopologyScene` node says `col: 2, row: 0`, never `x: 1140`.
+
+`ConceptScene` is the one scene for an idea that has no architecture -- an API
+is a contract, an index speeds up lookups. It is a split (words left, figure
+right) that centres itself when there is no figure and stacks into a poster
+when the author asks it to; its figure is the same grid of nodes, boxes and
+links a topology draws, one size smaller, so a concept and a system diagram
+read as the same kind of picture.
 
 ## The markup primitives
 
@@ -222,4 +234,4 @@ in either scene.
 `npm run typecheck` covers the kit (the `src/remotion` tsconfig). To look at it,
 run the Studio and open the **Kit** folder -- the compositions are the visual
 test bench: `KitPrimitives` is the seven markup components on one screen, and
-each of the other six is a scene a real video could use.
+each of the other seven is a scene a real video could use.

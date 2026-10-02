@@ -4,8 +4,8 @@
  * A barrel is the right shape here because the kit is a *library*: what it
  * exports is the contract, and a consumer writing a new scene should be able to
  * see the whole vocabulary in one screen. Everything below the scenes is
- * exported on purpose -- the six scene types cover the common pictures, and the
- * primitives and geometry are what a seventh is built from.
+ * exported on purpose -- the seven scene types cover the common pictures, and
+ * the primitives and geometry are what an eighth is built from.
  *
  * Imports from outside the kit go through this file (`from '../kit/index.ts'`),
  * so a module can be moved between layers without touching its callers.
@@ -96,6 +96,7 @@ export {
   bendControl,
   borderPoint,
   centerOf,
+  circleBorderPoint,
   pathBetween,
   pointAlong,
   pointOnEdge,
@@ -106,8 +107,10 @@ export {
   selfLoopPath,
 } from './lib/geometry.ts';
 export type { Point, Rect } from './lib/geometry.ts';
-export { depthByNode } from './lib/graph.ts';
+export { depthByNode, reciprocalBend } from './lib/graph.ts';
 export type { GraphEdge } from './lib/graph.ts';
+export { gridBounds, gridRect } from './lib/grid.ts';
+export type { GridBounds, GridBox, GridOptions, GridPlacement } from './lib/grid.ts';
 export { LANGUAGES, LANGUAGE_LABEL, tokenize, tokenizeLine } from './lib/highlight.ts';
 export type { Language, Token, TokenKind } from './lib/highlight.ts';
 export { ADVANCE, estimatedLineCount, fitFontSize } from './lib/fit.ts';
@@ -126,6 +129,15 @@ export { SequenceScene } from './scenes/SequenceScene.tsx';
 export type { SequenceActor, SequenceMessage, SequenceSceneProps } from './scenes/SequenceScene.tsx';
 export { CodeScene } from './scenes/CodeScene.tsx';
 export type { CodeAside, CodeSceneProps } from './scenes/CodeScene.tsx';
+export { ConceptScene } from './scenes/ConceptScene.tsx';
+export type {
+  ConceptSceneProps,
+  ConceptTakeaway,
+  ConceptTerm,
+  ConceptVisual,
+  ConceptVisualLink,
+  ConceptVisualNode,
+} from './scenes/ConceptScene.tsx';
 
 // The kit's own compositions, registered by `RemotionRoot`.
 export { KitRoot } from './KitRoot.tsx';

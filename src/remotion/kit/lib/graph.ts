@@ -64,3 +64,25 @@ export function depthByNode(ids: string[], edges: GraphEdge[]): Map<string, numb
   }
   return depth;
 }
+
+/**
+ * How far one of a pair of opposing edges must bow to be told apart from its
+ * twin. Two lines drawn between the same pair of nodes would otherwise sit on
+ * top of each other and read as one.
+ *
+ * The side is chosen by the node ids rather than by which edge happens to be
+ * written first, so the picture does not change when the edge list is
+ * reordered.
+ *
+ * The magnitude is the caller's, because it is really a statement about the gap
+ * between the two nodes: each of the pair bows `bend` out at its middle, and
+ * the two labels sit one above each bow, so a pair whose nodes stand close
+ * together -- or whose labels are long -- needs a wider bow than the default.
+ */
+export function reciprocalBend(edge: GraphEdge, edges: GraphEdge[], bend = 36): number {
+  const reciprocal = edges.some((other) => other.from === edge.to && other.to === edge.from);
+  if (!reciprocal) {
+    return 0;
+  }
+  return edge.from < edge.to ? bend : -bend;
+}

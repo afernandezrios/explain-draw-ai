@@ -40,6 +40,26 @@ export function borderPoint(rect: Rect, toward: Point): Point {
   return { x: center.x + dx * scale, y: center.y + dy * scale };
 }
 
+/**
+ * Where the ray from a circle's centre towards `toward` crosses its rim.
+ *
+ * The circle's counterpart to `borderPoint`, and the reason a figure can draw a
+ * round node at all: a circle is inscribed in its bounding square, so a line
+ * anchored to that square's border hangs in the gap at every diagonal -- by up
+ * to 41% of the radius, which is visible at any size worth drawing.
+ */
+export function circleBorderPoint(center: Point, radius: number, toward: Point): Point {
+  const dx = toward.x - center.x;
+  const dy = toward.y - center.y;
+  const length = Math.hypot(dx, dy);
+  if (length === 0) {
+    // A ray of zero length has no direction to leave in; the centre is the
+    // honest answer, as it is in `borderPoint`.
+    return center;
+  }
+  return { x: center.x + (dx / length) * radius, y: center.y + (dy / length) * radius };
+}
+
 /** The visible span of an edge between two boxes: border to border. */
 export function segmentBetween(from: Rect, to: Rect): { from: Point; to: Point } {
   return {
@@ -56,14 +76,24 @@ export function segmentBetween(from: Rect, to: Rect): { from: Point; to: Point }
  * way to its control point, so the control point is placed at twice the
  * requested distance. Two edges that would otherwise overlap (A to B and B to
  * A) can be pulled apart by giving them opposite bends.
+ *
+ * "Opposite bends" only means anything if a bend is measured against the screen
+ * rather than against whichever way the line happens to be drawn, so it is: the
+ * chord is read left to right -- top to bottom, when it is vertical -- before
+ * its normal is taken. A positive bend then bows a horizontal line down and a
+ * vertical line left, whichever end is `from`. Without that, a pair drawn in
+ * opposite directions cancels its own bends and the two lines land on top of
+ * each other, labels and all.
  */
 export function bendControl(from: Point, to: Point, bend: number): Point {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const length = Math.hypot(dx, dy) || 1;
+  const backwards = dx < 0 || (dx === 0 && dy < 0);
+  const normal = backwards ? -1 : 1;
   return {
-    x: (from.x + to.x) / 2 + (-dy / length) * bend * 2,
-    y: (from.y + to.y) / 2 + (dx / length) * bend * 2,
+    x: (from.x + to.x) / 2 + ((-dy / length) * normal) * bend * 2,
+    y: (from.y + to.y) / 2 + ((dx / length) * normal) * bend * 2,
   };
 }
 
