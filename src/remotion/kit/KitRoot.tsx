@@ -1,15 +1,16 @@
 /**
  * The kit's own compositions: one per scene type, each with a realistic
- * storyboard behind it.
+ * storyboard behind it, plus the markup primitives' gallery.
  *
  * These are the kit's documentation and its test bench at once. A design system
  * that is only described in prose cannot be looked at, and one whose examples
  * are lorem ipsum cannot be judged: every composition here is a scene from a
  * video that could ship -- a request path, a topology, an order saga -- so that
- * opening the Studio is the same as seeing the kit used.
+ * opening the Studio is the same as seeing the kit used. `KitPrimitives` is the
+ * same idea one level down, showing the seven markup components at once.
  *
  * They live in a `Folder` of their own so the project's real `Scene`
- * composition is not buried under six demos. Nothing in this file is imported
+ * composition is not buried under the demos. Nothing in this file is imported
  * by the render pipeline: a production render never mounts a kit demo.
  */
 
@@ -22,6 +23,7 @@ import { FlowScene, type FlowSceneProps } from './scenes/FlowScene.tsx';
 import { TopologyScene, type TopologySceneProps } from './scenes/TopologyScene.tsx';
 import { SequenceScene, type SequenceSceneProps } from './scenes/SequenceScene.tsx';
 import { CodeScene, type CodeSceneProps } from './scenes/CodeScene.tsx';
+import { PrimitivesGallery } from './PrimitivesGallery.tsx';
 
 /** Eight seconds: long enough for every scene type to finish its own pacing. */
 const DEMO_FRAMES = 8 * CANVAS.fps;
@@ -150,6 +152,16 @@ const CODE: CodeSceneProps = {
 
 export const KitRoot: React.FC = () => (
   <Folder name="Kit">
+    {/* The markup layer's bench. First in the folder because it is the level
+        the scene types below are built from. */}
+    <Composition
+      id="KitPrimitives"
+      component={PrimitivesGallery}
+      durationInFrames={DEMO_FRAMES}
+      fps={CANVAS.fps}
+      width={CANVAS.width}
+      height={CANVAS.height}
+    />
     <Composition
       id="KitTitle"
       component={TitleScene}

@@ -34,7 +34,8 @@ architecture:
   lib/             geometry, graph depth, tokenizing -- plain functions, no React
   animation/       when things happen (timing.ts) and how they arrive (presets.ts)
       |
-  primitives/      Text, Surface, Icon, Pill, DiagramNode, Edge, CodeBlock, Callout
+  primitives/      markup: Box, Label, Highlight, Arrow, Node, Connection, CodeBlock
+                   scenes: Text, Surface, Icon, Pill, DiagramNode, Edge, Callout
       |
   layout/          Frame (the scene shell) and Stack (row/column/grid/centre)
       |
@@ -47,6 +48,12 @@ architecture:
 loading, no side effects -- so that importing it is free and a layout can be
 reasoned about without a render. `theme.tsx` is the only place a colour is
 resolved; a component asks for `theme.accent[accent]`, never for `#4d8dff`.
+
+**`primitives/` has two levels.** The markup primitives (Box, Label, Highlight,
+Arrow, Node, Connection, CodeBlock) draw one thing each for markup that owns its
+own coordinates; the scene-level components (Text, Surface, Icon, Pill,
+DiagramNode, Edge, Callout) are what the six scene types are built from. The
+markup level is documented in its own section below.
 
 **`lib/` has no React in it.** `geometry.ts` answers two questions -- where does
 a line leave a box, and where is a point part-way along a path -- and answering
@@ -109,6 +116,56 @@ topologies, design patterns and algorithm steps. What they have in common is
 that the *author* states structure and the *component* computes pixels: a
 `TopologyScene` node says `col: 2, row: 0`, never `x: 1140`.
 
+## The markup primitives
+
+Below the scene types sits a second, smaller vocabulary: seven components that
+draw one thing each, for markup that owns its own coordinates. A scene type
+takes a storyboard and computes a layout; these take the layout you wrote.
+
+| Component | Draws | The props that matter |
+| --- | --- | --- |
+| `Box` | A rectangle, placed or in flow | `x`/`y`/`w`/`h`, `tone`, `accent`, `raised`, `center` |
+| `Label` | A word at a point or in flow | `x`/`y`, `anchor`, `variant`, `plate`, `mono` |
+| `Highlight` | A marker or an underline over a phrase | `variant`, `accent`, `color` |
+| `Arrow` | A line with a head, between two points | `from`/`to`, `bend`, `dashed`, `arrow`, `label` |
+| `Node` | A named box: label, sublabel, icon | `label`, `w`/`h`, `icon`, `accent` |
+| `Connection` | An arrow between two boxes or points | `from`/`to` (rect or point), all of `Arrow`'s |
+| `CodeBlock` | A listing in a window | `code`, `language`, `highlight`, `reveals` |
+
+They are additive. `Surface`, `Text`, `DiagramNode` and `Edge` are untouched,
+and each new component reuses what is already there: `Box` is a `Surface` with
+geometry, `Node` is a `Box` with a `Label`, `Connection` is an `Arrow` that
+snaps to rectangles through the same `lib/geometry.ts` an `Edge` uses, and
+`CodeBlock` is the component the code scene already draws. The scene-level
+components keep their video contracts -- a `DiagramNode`'s fixed stack height,
+an `Edge` inside a shared `EdgeLayer`; the markup primitives have none, which is
+what lets them be used in a hand-written composition, a still, or a browser
+preview that has no video behind it.
+
+**The animation contract.** Every primitive takes an optional `enter`: a
+`Timing` in frames from the composition's start, the same beat `paceReveals`
+hands a scene. The primitive animates itself from the frame clock, and the
+components that draw a line or a swash (`Arrow`, `Connection`, `Highlight`)
+also take an explicit `progress`, 0 to 1, which overrides `enter`. Neither
+given means the thing is drawn at rest. Nothing reads `fps` or
+`durationInFrames` -- a primitive has no opinion about the video it is in, so
+pacing belongs to the caller.
+
+A rectangle is the contract between a box and a connection, so markup keeps its
+rects in named constants:
+
+```tsx
+const client = { x: 40, y: 60, w: 180, h: 96 };
+const api = { x: 320, y: 60, w: 180, h: 96 };
+
+<Node {...client} label="Client" icon="browser" accent="cyan" enter={beats[0]} />
+<Node {...api} label="API" icon="server" enter={beats[1]} />
+<Connection from={client} to={api} label="POST /orders" accent="blue" enter={beats[2]} />
+```
+
+The demos are the `KitPrimitives` composition: seven cells, one per component,
+each doing the smallest thing that shows what it is for.
+
 ## Adding a scene type
 
 1. Write `scenes/YourScene.tsx`: a `Frame` plus a body, props typed and
@@ -161,5 +218,6 @@ in either scene.
 ## Verifying it
 
 `npm run typecheck` covers the kit (the `src/remotion` tsconfig). To look at it,
-run the Studio and open the **Kit** folder -- the six compositions are the
-visual test bench, and each one is a scene a real video could use.
+run the Studio and open the **Kit** folder -- the compositions are the visual
+test bench: `KitPrimitives` is the seven markup components on one screen, and
+each of the other six is a scene a real video could use.

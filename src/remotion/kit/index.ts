@@ -66,6 +66,20 @@ export type { CodeBlockProps } from './primitives/CodeBlock.tsx';
 export { Callout } from './primitives/Callout.tsx';
 export type { CalloutProps } from './primitives/Callout.tsx';
 
+// The markup primitives: the hand-authored layer, one level below the scenes.
+export { Box } from './primitives/Box.tsx';
+export type { BoxProps } from './primitives/Box.tsx';
+export { Label } from './primitives/Label.tsx';
+export type { LabelAnchor, LabelProps } from './primitives/Label.tsx';
+export { Highlight } from './primitives/Highlight.tsx';
+export type { HighlightProps, HighlightVariant } from './primitives/Highlight.tsx';
+export { Arrow } from './primitives/Arrow.tsx';
+export type { ArrowProps } from './primitives/Arrow.tsx';
+export { Connection } from './primitives/Connection.tsx';
+export type { ConnectionAnchor, ConnectionProps } from './primitives/Connection.tsx';
+export { Node } from './primitives/Node.tsx';
+export type { NodeProps } from './primitives/Node.tsx';
+
 // Animation: when things happen, and how they arrive.
 export { Reveal } from './animation/Reveal.tsx';
 export type { RevealProps } from './animation/Reveal.tsx';
@@ -73,6 +87,7 @@ export { REVEAL_PRESETS, ramp, revealStyle } from './animation/presets.ts';
 export type { RevealPreset } from './animation/presets.ts';
 export { loopProgress, paceReveals, staggerTimings, toFrames } from './animation/timing.ts';
 export type { PaceOptions, ScenePace, Timing } from './animation/timing.ts';
+export { useEnterProgress, useEnterStyle } from './animation/useEnter.ts';
 
 // Maths, kept out of React so a diagram can be reasoned about without drawing.
 export {
@@ -110,3 +125,4 @@ export type { CodeAside, CodeSceneProps } from './scenes/CodeScene.tsx';
 
 // The kit's own compositions, registered by `RemotionRoot`.
 export { KitRoot } from './KitRoot.tsx';
+export { PrimitivesGallery } from './PrimitivesGallery.tsx';
