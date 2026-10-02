@@ -5,11 +5,11 @@
  * asked for the relationships between those shapes -- which label names which
  * box, which arrow joins which two things. It is good at the second and bad at
  * the first, because the first is arithmetic it cannot do: it does not know how
- * wide a word will be in Caveat at size 6, so it cannot centre that word in a
- * circle, and it cannot find the point where a line meets a rectangle's edge.
- * Measured across the storyboards in this repo before this module existed, half
- * the labels overflowed the shape they named and a third of the arrows ended in
- * empty space.
+ * wide a word will be in this handwriting at size 6, so it cannot centre that
+ * word in a circle, and it cannot find the point where a line meets a
+ * rectangle's edge. Measured across the storyboards in this repo before this
+ * module existed, half the labels overflowed the shape they named and a third
+ * of the arrows ended in empty space.
  *
  * So the division of labour is: the model says what relates to what, and this
  * module computes where that leaves everything. It is pure -- no clock, no
@@ -25,10 +25,29 @@
  * form so a repair pass can carry it back. Losing a whole storyboard over a
  * mis-numbered arrow would be a far worse outcome than drawing that one arrow
  * slightly wrong.
+ *
+ * The pass rewrites anchors and nothing else. The words a composite shape
+ * carries -- a card's title, a badge's symbol, a list's heading and items --
+ * are placed by pure functions of the shape's own fields (see `TextPlacement`
+ * below) and handed to the renderer, never written back as coordinates. That
+ * is what keeps the fixed point: nothing here can read a position this pass
+ * has already moved.
  */
 
 import { BOARD_H, BOARD_W, toBoardLen, toBoardX, toBoardY } from './board.ts';
 import { ARM_SPREAD, FEET_BELOW, HEAD_ABOVE, HEAD_RADIUS, LEG_SPREAD } from './figure.ts';
+import {
+  BULLET_BASELINE,
+  BULLET_DOT_INDENT,
+  BULLET_DOT_RATIO,
+  BULLET_INDENT,
+  BULLET_LINE_RATIO,
+  BULLET_PAD_TOP,
+  BULLET_TITLE_RATIO,
+  bulletItemSize,
+  bulletListHeight,
+  bulletTitle,
+} from './list-metrics.ts';
 import { MIN_LABEL_SIZE, type Scene, type Scenes, type Shape } from './schema.ts';
 import { textWidthEm } from './text-metrics.ts';
 
@@ -39,19 +58,27 @@ const LABEL_CONTAINERS: ReadonlySet<Shape['kind']> = new Set<Shape['kind']>([
   'box',
   'circle',
   'cloud',
+  'card',
+  'container',
 ]);
 
 /**
  * What an arrow or a line can run between. A stick figure is a thing in the
  * diagram -- people are most of what a diagram is about -- so it is linkable;
  * a label is not, because a line to a word is a line to the word's *subject*,
- * and the model can say that directly by pointing at the shape itself.
+ * and the model can say that directly by pointing at the shape itself. The
+ * composite shapes are linkable for the same reason a box is: they are the
+ * things a diagram is made of.
  */
 const LINKABLE: ReadonlySet<Shape['kind']> = new Set<Shape['kind']>([
   'box',
   'circle',
   'cloud',
   'stickFigure',
+  'card',
+  'container',
+  'badge',
+  'bulletList',
 ]);
 
 /** What a cross can be drawn over. Anything with a footprint, words included. */
@@ -61,6 +88,10 @@ const CROSSABLE: ReadonlySet<Shape['kind']> = new Set<Shape['kind']>([
   'cloud',
   'stickFigure',
   'label',
+  'card',
+  'container',
+  'badge',
+  'bulletList',
 ]);
 
 /* ───────────────────────────── tuning ───────────────────────────── */
@@ -74,7 +105,7 @@ const CROSSABLE: ReadonlySet<Shape['kind']> = new Set<Shape['kind']>([
  * too-big label that overhangs slightly is more legible than a tiny one that
  * fits.
  */
-const LABEL_FIT_WIDTH = 0.86;
+const LABEL_FIT_WIDTH = 0.88;
 const LABEL_FIT_HEIGHT = 0.6;
 
 /**
@@ -82,12 +113,23 @@ const LABEL_FIT_HEIGHT = 0.6;
  * face hangs most of its mass above the baseline, so centring the baseline
  * itself would ride the words visibly high.
  */
-const BASELINE_SINK = 0.35;
+const BASELINE_SINK = 0.32;
 
 /** A caption is sized off its figure, within these. */
 const CAPTION_RATIO = 0.4;
 const CAPTION_MAX_SIZE = 8;
-const CAPTION_GAP = 1.05;
+const CAPTION_GAP = 1.0;
+
+/** A card's title is sized off the card's height, within these. */
+const CARD_TITLE_RATIO = 0.28;
+const CARD_TITLE_MAX_SIZE = 10;
+/** Its inset from the left edge and baseline below the top, in its own sizes. */
+const CARD_TITLE_PAD_X = 0.8;
+const CARD_TITLE_BASELINE = 1.0;
+
+/** A badge's symbol is sized off the badge's radius, within these. */
+const BADGE_TEXT_RATIO = 1.1;
+const BADGE_TEXT_MAX_SIZE = 14;
 
 /** Distinct from any real gap, so "no room" is not mistaken for "nearly none". */
 const MIN_UNDERLINE_WIDTH = 2;
@@ -137,13 +179,16 @@ function round2(value: number): number {
 export function shapeBox(shape: Shape, shapes?: readonly Shape[]): Box | null {
   switch (shape.kind) {
     case 'box':
+    case 'card':
+    case 'container':
       return {
         x1: toBoardX(shape.x),
         y1: toBoardY(shape.y),
         x2: toBoardX(shape.x + shape.w),
         y2: toBoardY(shape.y + shape.h),
       };
-    case 'circle': {
+    case 'circle':
+    case 'badge': {
       // Isotropic: a radius is a percent of board *height*, which in pixels is
       // the same distance on both axes. That is the whole reason circles stay
       // round on a 16:9 board.
@@ -151,6 +196,18 @@ export function shapeBox(shape: Shape, shapes?: readonly Shape[]): Box | null {
       const cx = toBoardX(shape.x);
       const cy = toBoardY(shape.y);
       return { x1: cx - r, y1: cy - r, x2: cx + r, y2: cy + r };
+    }
+    case 'bulletList': {
+      // As tall as the list's own arithmetic says it is: the size it settles on
+      // up to the bottom row. Read from `list-metrics`, never from where the
+      // text was drawn, so this stays a fixed point.
+      const height = bulletListHeight(shape, bulletItemSize(shape));
+      return {
+        x1: toBoardX(shape.x),
+        y1: toBoardY(shape.y),
+        x2: toBoardX(shape.x + shape.w),
+        y2: toBoardY(shape.y + height),
+      };
     }
     case 'cloud':
       return {
@@ -192,6 +249,7 @@ export function shapeBox(shape: Shape, shapes?: readonly Shape[]): Box | null {
     case 'arrow':
     case 'connector':
     case 'underline':
+    case 'divider':
       // A line, with no area to centre anything in or cross anything out over.
       return null;
   }
@@ -213,14 +271,22 @@ function rectReach(halfW: number, halfH: number, dx: number, dy: number): number
   return Math.min(tx, ty);
 }
 
-/* ─────────────────────────── caption ────────────────────────────── */
+/* ───────────────────────── carried text ─────────────────────────── */
 
-export type CaptionPlacement = {
+/**
+ * Where one run of text a shape carries goes, in board pixels: a figure's
+ * caption, a card's title, a badge's symbol, a list's heading and items. This
+ * text is not a shape in the storyboard -- see the note on `layOutScenes` for
+ * why -- so `svg.ts` asks for these placements rather than looking a shape up.
+ */
+export type TextPlacement = {
   x: number;
   y: number;
   text: string;
   fontSize: number;
 };
+
+export type CaptionPlacement = TextPlacement;
 
 /**
  * Where a figure's caption goes, and how big it is drawn. Exported because the
@@ -252,8 +318,103 @@ export function captionPlacement(figure: Extract<Shape, { kind: 'stickFigure' }>
     x: round2(x),
     y: round2(Math.min(baseline, BOARD_H - 2)),
     text,
-    fontSize: size,
+    // `size` is a percent of board height, like every other text size in the
+    // schema; the renderer wants board pixels, like `labelPlacement` gives it.
+    fontSize: toBoardLen(size),
   };
+}
+
+/* ─────────────────── card, badge and bullet text ────────────────── */
+
+/** A card's own title, drawn just inside its top edge. */
+export function cardTitlePlacement(card: Extract<Shape, { kind: 'card' }>): TextPlacement | null {
+  const text = card.title;
+  if (text === null || text === undefined || text.trim() === '') {
+    return null;
+  }
+  const size = Math.min(
+    CARD_TITLE_MAX_SIZE,
+    Math.max(MIN_LABEL_SIZE, card.h * CARD_TITLE_RATIO),
+  );
+  const px = toBoardLen(size);
+  return {
+    x: round2(toBoardX(card.x) + px * CARD_TITLE_PAD_X),
+    y: round2(toBoardY(card.y) + px * CARD_TITLE_BASELINE),
+    text,
+    fontSize: px,
+  };
+}
+
+/** A badge's symbol, centred in the badge. */
+export function badgePlacement(badge: Extract<Shape, { kind: 'badge' }>): TextPlacement | null {
+  const text = badge.text;
+  if (text === null || text === undefined || text.trim() === '') {
+    return null;
+  }
+  const size = Math.min(
+    BADGE_TEXT_MAX_SIZE,
+    Math.max(MIN_LABEL_SIZE, badge.r * BADGE_TEXT_RATIO),
+  );
+  const px = toBoardLen(size);
+  // Centred on the badge's centre: a short symbol's width is measured the same
+  // way every other run of text is.
+  return {
+    x: round2(toBoardX(badge.x) - labelWidthPx(text, size) / 2),
+    y: round2(toBoardY(badge.y) + px * BASELINE_SINK),
+    text,
+    fontSize: px,
+  };
+}
+
+export type BulletListPlacement = {
+  title: TextPlacement | null;
+  items: TextPlacement[];
+  /** The dot markers, in board pixels; their ink comes from the shape's colour. */
+  dots: { x: number; y: number; r: number }[];
+};
+
+/**
+ * Where a list's heading, items and dots go. The vertical rhythm is
+ * `list-metrics`' own row budget -- the same arithmetic the board-extent check
+ * measures the list with -- so a list drawn here ends exactly where the
+ * validator thought it would, and placing it twice lands on the same
+ * coordinates.
+ */
+export function bulletListPlacement(
+  list: Extract<Shape, { kind: 'bulletList' }>,
+): BulletListPlacement {
+  const size = bulletItemSize(list);
+  const px = toBoardLen(size);
+  const textX = round2(toBoardX(list.x) + px * BULLET_INDENT);
+  const dotX = round2(toBoardX(list.x) + px * BULLET_DOT_INDENT);
+  const dotR = px * BULLET_DOT_RATIO;
+  let cursor = toBoardY(list.y) + px * BULLET_PAD_TOP;
+
+  let title: TextPlacement | null = null;
+  const heading = bulletTitle(list);
+  if (heading !== null) {
+    // The heading's line box is its own size; the baseline sits centred in it,
+    // sunk by the same fraction every other line of text uses.
+    const titlePx = px * BULLET_TITLE_RATIO;
+    title = {
+      x: textX,
+      y: round2(cursor + titlePx / 2 + titlePx * BULLET_BASELINE),
+      text: heading,
+      fontSize: titlePx,
+    };
+    cursor += titlePx;
+  }
+
+  const items: TextPlacement[] = [];
+  const dots: { x: number; y: number; r: number }[] = [];
+  for (const text of list.items) {
+    const rowPx = px * BULLET_LINE_RATIO;
+    const middle = cursor + rowPx / 2;
+    items.push({ x: textX, y: round2(middle + px * BULLET_BASELINE), text, fontSize: px });
+    dots.push({ x: dotX, y: round2(middle), r: dotR });
+    cursor += rowPx;
+  }
+  return { title, items, dots };
 }
 
 /* ─────────────────────────── the pass ───────────────────────────── */
@@ -501,9 +662,14 @@ function snapToEdge(
   const halfH = boxHeightPx(box) / 2;
   // A round shape is met at its outline; anything else at the rectangle around
   // it, which is where a box's own ink is. Reading the kind off the *target* is
-  // the point: the line arriving is an arrow whatever it lands on.
+  // the point: the line arriving is an arrow whatever it lands on. A card or a
+  // container is drawn with rounded corners, and this lands on its straight
+  // sides -- which is exactly where a rounded rectangle's boundary is, except
+  // for a ray aimed at a corner, which overshoots by at most the corner radius.
+  // Close enough for an arrowhead, and the alternative (fitting the arcs) would
+  // put geometry in two modules.
   const reach =
-    target.kind === 'circle' || target.kind === 'cloud'
+    target.kind === 'circle' || target.kind === 'cloud' || target.kind === 'badge'
       ? ellipseReach(halfW, halfH, dx / length, dy / length)
       : rectReach(halfW, halfH, dx / length, dy / length);
   const point = {

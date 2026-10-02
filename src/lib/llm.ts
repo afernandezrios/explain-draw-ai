@@ -137,7 +137,7 @@ const TYPICAL_SCENES_LO = Math.round(TARGET_TOTAL_SECONDS / 18);
 const TYPICAL_SCENES_HI = Math.round(TARGET_TOTAL_SECONDS / 12);
 
 export const SCRIPT_SYSTEM_PROMPT = [
-  'You write scripts for short hand-drawn whiteboard explainer videos.',
+  'You write scripts for short diagram-style explainer videos: clean, modern whiteboard scenes with crisp flat shapes, pastel fills and hand lettering.',
   `Write for about ${TARGET_TOTAL_SECONDS} seconds (${Math.floor(
     TARGET_TOTAL_SECONDS / 60,
   )} minutes) of spoken explanation, roughly ${TARGET_SCRIPT_WORDS} words.`,
@@ -179,7 +179,7 @@ function narrationRoundingExample(): string {
 }
 
 export const SCENES_SYSTEM_PROMPT = [
-  'You turn an explainer script into a storyboard of hand-drawn whiteboard scenes.',
+  'You turn an explainer script into a storyboard of clean, flat diagram scenes.',
   '',
   'Each scene is drawn on one 16:9 board. All positions and sizes are percentages:',
   '- x runs across the board, 0 = left edge, 100 = right edge',
@@ -194,7 +194,7 @@ export const SCENES_SYSTEM_PROMPT = [
   '',
   'Rules:',
   `- every scene lasts ${MIN_SCENE_SECONDS} to ${MAX_SCENE_SECONDS} seconds`,
-  `- keep all the words written in a scene to ${MAX_LABEL_WORDS} words or fewer, in total: every label, plus every stickFigure caption`,
+  `- keep all the words written in a scene to ${MAX_LABEL_WORDS} words or fewer, in total: every label, every stickFigure caption, and the words inside cards, badges and bullet lists`,
   `- label sizes run from ${MIN_LABEL_SIZE} to ${MAX_LABEL_SIZE}`,
   '- shapes address each other by index: `label.inShape`, `underline.underLabel`, and `fromShape`/`toShape` on arrows and connectors each take the position of another shape in the SAME scene\'s "shapes" array, counting from 0, or null for none. Use them for every relationship the scene shows -- a label centred in its box, an arrow that really lands on the server, a line under the words it underlines. Count that index yourself, from the start of the array: an index pointing at the wrong shape is worse than null',
   '- the coordinates you give an anchored shape are a starting point -- a label inside a shape is centred in it and shrunk until it fits, and an anchored line has its ends moved onto its shapes. Put them roughly where they belong and let the anchor do the work',
@@ -205,10 +205,12 @@ export const SCENES_SYSTEM_PROMPT = [
   `- never round up -- ${narrationRoundingExample()} -- because a narration one word over its scene's budget is rejected`,
   '- leave two or three words of headroom under the budget rather than writing right up to it: a scene whose narration ends early is fine, a narration that cannot be spoken in the time the scene is on screen is not',
   '- write narration as plain spoken English in full sentences: it is read aloud, so no headings, no lists, no stage directions',
-  `- aim for about ${TARGET_TOTAL_SECONDS} seconds in total, and that total is checked: add up every scene's seconds, and the sum must land between ${MIN_TOTAL_SECONDS} and ${MAX_TOTAL_SECONDS}. Scenes of 12-18 seconds are typical, which is roughly ${TYPICAL_SCENES_LO} to ${TYPICAL_SCENES_HI} scenes -- 9 or 10 short scenes totals under two minutes and is refused. Your best measure is the narration: read at ${NARRATION_WPS} words per second, the script's words are the minutes of your video, so all the scenes' narrations together should re-tell the whole script, not condense it`,
+  `- aim for about ${TARGET_TOTAL_SECONDS} seconds in total, and that total is checked: add up every scene's seconds, and the sum must land between ${MIN_TOTAL_SECONDS} and ${MAX_TOTAL_SECONDS} seconds. Scenes of 12-18 seconds are typical, which is roughly ${TYPICAL_SCENES_LO} to ${TYPICAL_SCENES_HI} scenes -- 9 or 10 short scenes totals under two minutes and is refused. Your best measure is the narration: read at ${NARRATION_WPS} words per second, the script's words are the minutes of your video, so all the scenes' narrations together should re-tell the whole script, not condense it`,
   '- scene 1 is the title scene: it states the topic like a hand-lettered title card',
-  '- use color "accent" for the one thing that matters most in a scene and "emphasis" sparingly; null means ordinary dark ink',
+  '- use color as a signal, not decoration: null means ordinary dark ink and is right for most shapes; "accent" for the one thing that matters most in a scene; "emphasis" for failures and removals; "success" and "warn" for the good and bad sides of a comparison; "violet", "teal" and "gray" for extra categories and de-emphasised parts',
   '- spread shapes across the board; do not stack everything in one corner',
+  '- the top of the board carries a header the app draws (the scene title and a progress bar): keep your drawing at y = 10 or below so nothing hides behind it',
+  '- prefer the composite shapes when they fit the content: a card instead of a box plus a title label, a badge instead of a small circle plus its label, a bulletList for a list of points, and a container behind a group of related shapes',
   '',
   'Return the storyboard as {"scenes": [...]}.',
 ].join('\n');
@@ -238,7 +240,7 @@ function storyboardCapsReminder(script: Script): string {
   return (
     '\n\nReminder: count the shapes in every scene -- each one must draw between ' +
     `${MIN_SHAPES_PER_SCENE} and ${MAX_SHAPES_PER_SCENE} of them -- keep each scene's ` +
-    `written words (labels plus stickFigure captions) within ${MAX_LABEL_WORDS} words, ` +
+    `written words (labels, captions and the text inside composite shapes) within ${MAX_LABEL_WORDS} words, ` +
     `and keep each scene's narration to the ` +
     `word budget for its own length: ${NARRATION_WPS} words per second rounded DOWN to a ` +
     `whole word (${narrationRoundingExample()}). The script runs to ${scriptWords} words, ` +

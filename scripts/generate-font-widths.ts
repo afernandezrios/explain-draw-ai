@@ -1,5 +1,5 @@
 /**
- * Regenerates the Caveat advance-width table in `src/lib/text-metrics.ts`.
+ * Regenerates the handwriting advance-width table in `src/lib/text-metrics.ts`.
  *
  * The layout pass has to know how wide a label will actually be before it
  * centres it in a box or sizes an underline to it -- and it has to know that in
@@ -7,12 +7,16 @@
  * here, and checked in. Run this only when the bundled face in `public/fonts`
  * is replaced.
  *
+ * The face it measures is whatever `board.ts` names -- the same family the
+ * renderer loads and the preview embeds -- so swapping fonts cannot leave this
+ * script measuring the old one.
+ *
  * Measuring needs a real text engine: `measureText` applies the font's own
  * advance widths and the browser's shaping. Chrome is already a dependency of
  * the renderer, so this reuses its headless shell rather than adding a font
  * parser.
  *
- * Run: node scripts/generate-caveat-widths.ts
+ * Run: node scripts/generate-font-widths.ts
  * (Type-stripped directly, like the render worker -- so relative imports carry
  * their `.ts` extension.)
  */
@@ -21,10 +25,14 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openBrowser } from '@remotion/renderer';
+import { FONT_FAMILY, FONT_FILE } from '../src/lib/board.ts';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const FONT_PATH = path.join(ROOT, 'public', 'fonts', 'caveat-latin-400.woff2');
+const FONT_PATH = path.join(ROOT, 'public', 'fonts', FONT_FILE);
 const TARGET = path.join(ROOT, 'src', 'lib', 'text-metrics.ts');
+
+/** The family as a CSS font shorthand wants it: a name with spaces, quoted. */
+const FONT_FAMILY_CSS = JSON.stringify(FONT_FAMILY);
 
 const BEGIN = '/* BEGIN GENERATED WIDTHS */';
 const END = '/* END GENERATED WIDTHS */';
@@ -71,7 +79,7 @@ const PROBE_SIZE = 1000;
  * character the face has no glyph for. Quoted, so the font shorthand parses it
  * as one family name rather than a fallback list.
  */
-const ABSENT_FAMILY = '"__Caveat_Absent_Probe__"';
+const ABSENT_FAMILY = '"__Absent_Face_Probe__"';
 
 /**
  * Two measurements of the same character differ by more than this only when the
@@ -105,9 +113,9 @@ async function measure(chars: string[]): Promise<Widths> {
     // which is enough to hang a canvas off. (Remotion's page wrapper is a
     // cut-down Puppeteer page -- it has no `setContent`.)
     return (await page.evaluate(
-      ({ fontData: data, chars: wanted, probeSize, absentFamily, epsilon }) =>
+      ({ fontData: data, family, familyCss, chars: wanted, probeSize, absentFamily, epsilon }) =>
         new Promise<Record<string, number>>((resolve, reject) => {
-          const face = new FontFace('Caveat', `url(data:font/woff2;base64,${data}) format('woff2')`);
+          const face = new FontFace(family, `url(data:font/woff2;base64,${data}) format('woff2')`);
           face
             .load()
             .then(() => {
@@ -119,13 +127,13 @@ async function measure(chars: string[]): Promise<Widths> {
               }
               const out: Record<string, number> = {};
               for (const ch of wanted) {
-                ctx.font = `${probeSize}px Caveat`;
+                ctx.font = `${probeSize}px ${familyCss}`;
                 const withFace = ctx.measureText(ch).width / probeSize;
                 ctx.font = `${probeSize}px ${absentFamily}`;
                 const withoutFace = ctx.measureText(ch).width / probeSize;
                 // Equal readings mean the face had nothing to offer and both
                 // were drawn by the same fallback font. Those widths are a
-                // property of this machine, not of Caveat, so they are left
+                // property of this machine, not of the face, so they are left
                 // out entirely and the table's own fallback covers them.
                 if (Math.abs(withFace - withoutFace) > epsilon) {
                   out[ch] = withFace;
@@ -137,6 +145,8 @@ async function measure(chars: string[]): Promise<Widths> {
         }),
       {
         fontData,
+        family: FONT_FAMILY,
+        familyCss: FONT_FAMILY_CSS,
         chars,
         probeSize: PROBE_SIZE,
         absentFamily: ABSENT_FAMILY,
@@ -158,7 +168,7 @@ function renderTable(widths: Widths): string {
   const entries = Object.entries(widths).map(
     ([char, width]) => `  '${literal(char)}': ${width.toFixed(4)},`,
   );
-  return [`${BEGIN}`, 'export const CAVEAT_WIDTHS: Readonly<Record<string, number>> = {', ...entries, '};', END].join('\n');
+  return [`${BEGIN}`, 'export const FONT_WIDTHS: Readonly<Record<string, number>> = {', ...entries, '};', END].join('\n');
 }
 
 function main(): void {

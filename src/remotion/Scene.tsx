@@ -37,7 +37,7 @@ export type SceneProps = {
  * begins exactly when its scene begins -- in a preview clip and in the joined
  * video alike, because the join passes this track through untouched.
  */
-export const Scene: React.FC<SceneProps> = ({ scene, narrationPath }) => {
+export const Scene: React.FC<SceneProps> = ({ scene, sceneIndex, totalScenes, narrationPath }) => {
   const frame = useCurrentFrame();
   const { durationInFrames } = useVideoConfig();
 
@@ -58,7 +58,10 @@ export const Scene: React.FC<SceneProps> = ({ scene, narrationPath }) => {
     [frame, windows],
   );
 
-  const svg = useMemo(() => sceneSvg(scene, progress, { width: '100%', height: '100%' }), [scene, progress]);
+  const svg = useMemo(
+    () => sceneSvg(scene, progress, { width: '100%', height: '100%', sceneIndex, totalScenes }),
+    [scene, progress, sceneIndex, totalScenes],
+  );
 
   return (
     <>

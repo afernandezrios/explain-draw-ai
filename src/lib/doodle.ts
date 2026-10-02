@@ -1,8 +1,8 @@
 /**
- * rough.js geometry for the nine doodles.
+ * rough.js geometry for every shape kind.
  *
  * Determinism is a hard requirement: the composition re-renders the same scene
- * on every frame, and a shape whose wobble changed between frames would shimmer
+ * on every frame, and a shape whose line moved between frames would shimmer
  * on screen. Two things guarantee it:
  *
  *   - a FRESH seeded generator per shape, seeded from the shape's own content,
@@ -10,7 +10,7 @@
  *   - a module-scope memo, so each shape's path data is computed once and then
  *     reused for all of that scene's frames.
  *
- * A single shared generator would make each shape's wobble depend on every
+ * A single shared generator would make each shape's geometry depend on every
  * shape drawn before it -- changing one shape would reshuffle all the rest.
  *
  * `crossOut` is the one shape whose drawing is not its own: it is an X over
@@ -25,7 +25,7 @@ import rough from 'roughjs';
 import type { Drawable, OpSet, Options } from 'roughjs/bin/core';
 import type { RoughGenerator } from 'roughjs/bin/generator';
 import { COLOR_VALUES, FILL_VALUES, toBoardLen, toBoardX, toBoardY } from './board.ts';
-import { shapeBox } from './layout.ts';
+import { bulletListPlacement, shapeBox } from './layout.ts';
 import {
   ARM_BELOW,
   ARM_SPREAD,
@@ -38,25 +38,51 @@ import {
 } from './figure.ts';
 import type { Shape, ShapeKind } from './schema.ts';
 
-const ROUGHNESS = 1.1;
-const BOWING = 1;
-const STROKE_WIDTH = 3.4;
-const HACHURE_GAP = 8;
+/**
+ * Crisp, flat geometry: no roughness, no bowing, a hairline stroke -- the
+ * Excalidraw look rather than a marker-pen sketch. The seed and the memo still
+ * do their jobs; there is simply no wobble left for them to vary.
+ */
+const ROUGHNESS = 0;
+const BOWING = 0;
+const STROKE_WIDTH = 2.5;
 const FILL_WEIGHT = 2.2;
+
+/** Corner radius of a rounded rectangle, in board pixels, before clamping. */
+export const ROUNDED_CORNER_PX = 24;
+
+/** The dash pattern a container's outline is drawn with. */
+const CONTAINER_DASH = '10 8';
 
 const ARROW_HEAD_ANGLE = 0.44;
 const ARROW_HEAD_MIN = 22;
 const ARROW_HEAD_MAX = 42;
 
-/** Shapes that get a hachure fill behind their outline. */
-const FILLED: ReadonlySet<ShapeKind> = new Set<ShapeKind>(['box', 'circle', 'cloud']);
+/** Shapes that get a flat fill behind their outline. */
+const FILLED: ReadonlySet<ShapeKind> = new Set<ShapeKind>([
+  'box',
+  'circle',
+  'cloud',
+  'card',
+  'container',
+  'badge',
+]);
 
-/** One paintable path: `stroke` paths are dash-drawn, `fill` paths fade in. */
+/**
+ * One paintable path: `stroke` paths are dash-drawn, `fill` paths fade in.
+ * `shadow` marks a solid fill that casts the board's drop shadow; `dashPattern`
+ * is set only by shapes that fade in as a dashed outline (containers);
+ * `fadeStart` overrides when the fade begins, for fills that should wait for
+ * something else to draw first.
+ */
 export type DrawnPath = {
   d: string;
   kind: 'stroke' | 'fill';
   color: string;
   strokeWidth: number;
+  shadow?: boolean;
+  dashPattern?: string;
+  fadeStart?: number;
 };
 
 /** What the preview needs to draw a label, which has no rough geometry. */
@@ -129,19 +155,17 @@ function baseOptions(seed: number, stroke: string, fill: string | undefined): Op
     disableMultiStroke: true,
     // The roughjs renderer reads `disableMultiStrokeFill` for fills and
     // `disableMultiStroke` for outlines. Setting only the first leaves the
-    // doubled pen pass on exactly the hachure fills we meant to switch off.
+    // doubled pen pass on exactly the filled shapes we meant to switch off.
     disableMultiStrokeFill: true,
-    ...(fill === undefined
-      ? {}
-      : { fill, fillStyle: 'hachure', hachureGap: HACHURE_GAP, fillWeight: FILL_WEIGHT }),
+    ...(fill === undefined ? {} : { fill, fillStyle: 'solid' }),
   };
 }
 
 /**
  * Reads the op sets straight off the drawable rather than going through
- * `toPaths()`, which flattens outline, solid fill and hachure hatching into
- * indistinguishable `{d, stroke, fill}` records -- and a hachure fill needs a
- * different animation (fade) from an outline (dash-draw).
+ * `toPaths()`, which flattens outline and fill into indistinguishable
+ * `{d, stroke, fill}` records -- and a fill needs a different animation
+ * (fade) from an outline (dash-draw).
  */
 function emit(gen: RoughGenerator, set: OpSet, strokeColor: string, fillColor: string): DrawnPath {
   const d = gen.opsToPath(set);
@@ -152,12 +176,20 @@ function emit(gen: RoughGenerator, set: OpSet, strokeColor: string, fillColor: s
     d,
     kind: 'fill',
     color: fillColor,
+    // `fillSketch` is the hatched form roughjs emits for non-solid fills; the
+    // board's fills are all solid, so this is the only set type that carries
+    // weight, and every solid fill renders as a plain `fill`.
     strokeWidth: set.type === 'fillSketch' ? FILL_WEIGHT : 0,
   };
 }
 
 /* ─────────────────────────── shape builders ─────────────────────── */
 
+/**
+ * A closed arrowhead triangle, drawn as a fill so it reads as one solid head
+ * rather than an open V. The shaft is a separate drawable; both are emitted by
+ * `shapePaths`.
+ */
 function arrowHead(x1: number, y1: number, x2: number, y2: number): string {
   const angle = Math.atan2(y2 - y1, x2 - x1);
   const length = Math.hypot(x2 - x1, y2 - y1);
@@ -168,11 +200,29 @@ function arrowHead(x1: number, y1: number, x2: number, y2: number): string {
   const ly = y2 + Math.sin(left) * head;
   const rx = x2 + Math.cos(right) * head;
   const ry = y2 + Math.sin(right) * head;
-  return `M ${lx} ${ly} L ${x2} ${y2} L ${rx} ${ry}`;
+  return `M ${lx} ${ly} L ${x2} ${y2} L ${rx} ${ry} Z`;
 }
 
 function segment(ax: number, ay: number, bx: number, by: number): string {
   return `M ${ax} ${ay} L ${bx} ${by}`;
+}
+
+/**
+ * A rounded rectangle as a path. roughjs has no rounded-rectangle primitive, so
+ * the corners are quarter-circle arcs fed through `gen.path` -- at roughness 0
+ * the geometry comes back as written, the same way the cloud's curves do.
+ */
+function roundedRectPath(x: number, y: number, w: number, h: number, r: number): string {
+  return (
+    `M ${x + r} ${y} H ${x + w - r} A ${r} ${r} 0 0 1 ${x + w} ${y + r} V ${y + h - r}` +
+    ` A ${r} ${r} 0 0 1 ${x + w - r} ${y + h} H ${x + r} A ${r} ${r} 0 0 1 ${x} ${y + h - r}` +
+    ` V ${y + r} A ${r} ${r} 0 0 1 ${x + r} ${y} Z`
+  );
+}
+
+/** The corner radius a `w` by `h` box can carry without the arcs overlapping. */
+function cornerRadius(w: number, h: number): number {
+  return Math.min(ROUNDED_CORNER_PX, w / 2, h / 2);
 }
 
 /**
@@ -222,18 +272,31 @@ function buildDrawables(
 ): Drawable[] {
   switch (shape.kind) {
     case 'box':
+    case 'card':
+    case 'container': {
       // Widths are a percent of board width and heights of board height, so a
-      // `w`/`h` pair reads the way you would draw it on screen.
+      // `w`/`h` pair reads the way you would draw it on screen. All three are
+      // the same rounded rectangle; what differs is the text a card carries
+      // (drawn by the renderer) and the restyling `shapePaths` gives a
+      // container.
+      const w = toBoardX(shape.w);
+      const h = toBoardY(shape.h);
       return [
-        gen.rectangle(
-          toBoardX(shape.x),
-          toBoardY(shape.y),
-          toBoardX(shape.w),
-          toBoardY(shape.h),
+        gen.path(
+          roundedRectPath(
+            toBoardX(shape.x),
+            toBoardY(shape.y),
+            w,
+            h,
+            cornerRadius(w, h),
+          ),
           opts,
         ),
       ];
+    }
     case 'circle':
+    case 'badge':
+      // Isotropic radius: the same distance both ways, so it stays round.
       return [gen.circle(toBoardX(shape.x), toBoardY(shape.y), toBoardLen(shape.r) * 2, opts)];
     case 'cloud':
       return [
@@ -247,7 +310,9 @@ function buildDrawables(
       const y1 = toBoardY(shape.from.y);
       const x2 = toBoardX(shape.to.x);
       const y2 = toBoardY(shape.to.y);
-      return [gen.path(`${segment(x1, y1, x2, y2)} ${arrowHead(x1, y1, x2, y2)}`, opts)];
+      // The head is a separate closed path, pushed by `shapePaths` as a fill;
+      // the shaft alone dash-draws.
+      return [gen.path(segment(x1, y1, x2, y2), opts)];
     }
     case 'connector':
       return [
@@ -261,11 +326,18 @@ function buildDrawables(
           opts,
         ),
       ];
-    case 'underline': {
+    case 'underline':
+    case 'divider': {
+      // A horizontal rule; the two kinds differ in meaning, not geometry.
       const x = toBoardX(shape.x);
       const y = toBoardY(shape.y);
       return [gen.path(segment(x, y, x + toBoardX(shape.w), y), opts)];
     }
+    case 'bulletList':
+      // Nothing here: the dots are pushed by `shapePaths` as solid ink (see
+      // there), and the words are carried text the renderer draws (see
+      // `bulletListPlacement`).
+      return [];
     case 'stickFigure': {
       const cx = toBoardX(shape.x);
       const cy = toBoardY(shape.y);
@@ -323,7 +395,7 @@ const pathsMemo = new Map<string, DrawnPath[]>();
  *
  * `shapes` is the scene the shape belongs to, and is only read by `crossOut`,
  * which is drawn from the bounds of the shape it crosses. Passing it for the
- * other eight costs a lookup and changes nothing -- the memo key does not
+ * other kinds costs a lookup and changes nothing -- the memo key does not
  * mention it, so their cache entries are shared as they always were.
  */
 export function shapePaths(shape: Shape, shapes?: readonly Shape[]): DrawnPath[] {
@@ -348,6 +420,63 @@ export function shapePaths(shape: Shape, shapes?: readonly Shape[]): DrawnPath[]
       paths.push(emit(gen, set, strokeColor, fillColor));
     }
   }
+
+  if (shape.kind === 'arrow') {
+    // The head is a filled triangle rather than an open V. It waits until the
+    // shaft's dash-draw is nearly at the tip before fading in, so the head
+    // never floats ahead of the line.
+    paths.push({
+      d: arrowHead(
+        toBoardX(shape.from.x),
+        toBoardY(shape.from.y),
+        toBoardX(shape.to.x),
+        toBoardY(shape.to.y),
+      ),
+      kind: 'fill',
+      color: strokeColor,
+      strokeWidth: 0,
+      fadeStart: 0.75,
+    });
+  }
+
+  if (shape.kind === 'bulletList') {
+    // The dot markers are punctuation, not an area: solid ink discs, pushed
+    // here the way an arrowhead is so they carry the shape's own ink rather
+    // than the pastel `emit` would give a filled shape. They fade in with the
+    // shape's own progress.
+    const { dots } = bulletListPlacement(shape);
+    for (const dot of dots) {
+      const circle = gen.circle(dot.x, dot.y, dot.r * 2, { ...opts, fill: undefined });
+      for (const set of circle.sets) {
+        paths.push({ d: gen.opsToPath(set), kind: 'fill', color: strokeColor, strokeWidth: 0 });
+      }
+    }
+  }
+
+  // A filled shape's flat fill casts the board shadow; strokes, tints and
+  // arrowheads do not.
+  for (const path of paths) {
+    if (FILLED.has(shape.kind) && path.kind === 'fill' && path.strokeWidth === 0) {
+      path.shadow = true;
+    }
+  }
+
+  if (shape.kind === 'container') {
+    // A container groups rather than sits on the board, so it reads as chrome:
+    // a dashed outline over a flat tint, fading in as one piece. It has to fade
+    // rather than dash-draw, because the reveal dash (`pathLength="1"`,
+    // `stroke-dasharray="1"`) and a pattern dash cannot share one element --
+    // the second `stroke-dasharray` would simply replace the first.
+    for (const path of paths) {
+      path.kind = 'fill';
+      if (path.strokeWidth > 0) {
+        path.dashPattern = CONTAINER_DASH;
+      } else {
+        path.shadow = false;
+      }
+    }
+  }
+
   pathsMemo.set(key, paths);
   return paths;
 }

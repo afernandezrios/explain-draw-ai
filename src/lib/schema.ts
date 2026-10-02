@@ -33,6 +33,7 @@ import { z } from 'zod';
 // the same specifier, so one convention serves all three consumers.
 import { BOARD_H, BOARD_W, COLOR_NAMES } from './board.ts';
 import { ARM_SPREAD, FEET_BELOW, HEAD_ABOVE, HEAD_RADIUS, LEG_SPREAD } from './figure.ts';
+import { BULLET_MAX_ITEMS, bulletItemSize, bulletListHeight } from './list-metrics.ts';
 
 /* ────────────────────────────── caps ────────────────────────────── */
 
@@ -109,7 +110,9 @@ const PointSchema = z.object({
 const ColorSchema = z
   .enum(COLOR_NAMES)
   .nullable()
-  .describe('null for the default dark ink; accent is the single blue highlight; emphasis is red');
+  .describe(
+    'null for the default dark ink; accent is the blue highlight; emphasis is red for failures or removals; success and warn are green and amber for good and bad; violet, teal and gray are extra categories and de-emphasised parts',
+  );
 
 /* ──────────────────────────── anchors ───────────────────────────── */
 
@@ -157,6 +160,17 @@ function optionalCaption() {
 }
 
 /**
+ * A short run of text a shape carries and draws itself -- a card's title, a
+ * badge's symbol, a list's heading. Optional in the stored form and
+ * required-nullable in the provider form, the same treatment a caption gets,
+ * and for the same reason: a model that leaves out a field whose only sensible
+ * value was `null` should not cost the storyboard. See `ANCHORED_FIELDS`.
+ */
+function optionalText(max: number, description: string) {
+  return z.string().min(1).max(max).nullable().optional().describe(description);
+}
+
+/**
  * The provider-facing form of an anchored field: the same field with its
  * `.optional()` stripped, so it is required-but-nullable.
  *
@@ -185,10 +199,14 @@ function anchored(field: z.ZodTypeAny): z.ZodTypeAny {
 /* ──────────────────────── the shape vocabulary ──────────────────── */
 
 /**
- * The eight doodles, keyed by kind. This object is the source of the kind list,
- * so adding a ninth kind automatically reaches the model through
+ * The shape vocabulary, keyed by kind. This object is the source of the kind
+ * list, so adding a shape kind automatically reaches the model through
  * `SHAPE_KINDS`; the exhaustive `SHAPE_NOTES` record below then forces you to
  * describe it rather than leaving the model silently unaware.
+ *
+ * The first nine are the primitives; the last five are composites -- one shape
+ * that carries the words and structure of several primitives, so a scene gets
+ * more done inside the 12-shape cap.
  */
 const SHAPE_SPECS = {
   arrow: z.object({
@@ -265,6 +283,60 @@ const SHAPE_SPECS = {
       .describe('0-based index of the shape to cross out; the X lands on its bounds'),
     color: ColorSchema,
   }),
+  card: z.object({
+    kind: z.literal('card'),
+    x: Percent.describe('left edge, across'),
+    y: Percent.describe('top edge, down'),
+    w: Percent.describe('width, percent of board width'),
+    h: Percent.describe('height, percent of board height'),
+    title: optionalText(
+      80,
+      'a few words drawn inside the top of the card, or null for a plain card; counts toward the scene label-word budget',
+    ),
+    color: ColorSchema,
+  }),
+  container: z.object({
+    kind: z.literal('container'),
+    x: Percent.describe('left edge, across'),
+    y: Percent.describe('top edge, down'),
+    w: Percent.describe('width, percent of board width'),
+    h: Percent.describe('height, percent of board height'),
+    color: ColorSchema,
+  }),
+  badge: z.object({
+    kind: z.literal('badge'),
+    x: Percent.describe('centre, across'),
+    y: Percent.describe('centre, down'),
+    r: Height.describe('radius, percent of board height'),
+    text: optionalText(
+      3,
+      'a 1-3 character symbol drawn inside the badge, like a step number or a tick, or null for an empty dot; counts toward the scene label-word budget',
+    ),
+    color: ColorSchema,
+  }),
+  bulletList: z.object({
+    kind: z.literal('bulletList'),
+    x: Percent.describe('left edge, across'),
+    y: Percent.describe('top edge, down; the list runs down from here'),
+    w: Percent.describe('width, percent of board width'),
+    title: optionalText(
+      80,
+      'a heading drawn above the items, or null for an untitled list; counts toward the scene label-word budget',
+    ),
+    items: z
+      .array(z.string().min(1).max(80))
+      .describe(
+        'one short phrase per bullet, first to last; every word counts toward the scene label-word budget',
+      ),
+    color: ColorSchema,
+  }),
+  divider: z.object({
+    kind: z.literal('divider'),
+    x: Percent.describe('left end, across'),
+    y: Percent.describe('the line runs through this y'),
+    w: Percent.describe('length, percent of board width'),
+    color: ColorSchema,
+  }),
 } as const;
 
 export type ShapeKind = keyof typeof SHAPE_SPECS;
@@ -275,29 +347,48 @@ export const SHAPE_KINDS = Object.keys(SHAPE_SPECS) as ShapeKind[];
 /** How each kind is laid out, fed to the model. Exhaustive by construction. */
 export const SHAPE_NOTES: Record<ShapeKind, string> = {
   arrow:
-    'a wobbly arrow from `from` to `to`, with an open head at `to`; name the two shapes it joins in `fromShape`/`toShape` and its ends are moved onto their edges for you',
-  circle: 'an imperfect circle centred at `x`,`y` with radius `r`',
-  box: 'a rough rectangle with its top-left corner at `x`,`y`',
+    'an arrow from `from` to `to`, with a solid head at `to`; name the two shapes it joins in `fromShape`/`toShape` and its ends are moved onto their edges for you',
+  circle: 'a clean circle centred at `x`,`y` with radius `r`',
+  box: 'a crisp rounded rectangle with its top-left corner at `x`,`y`',
   label:
     'handwritten text anchored at its left edge and baseline; name the box, circle or cloud it sits in via `inShape` and it is centred inside that shape and shrunk until it fits. One label per shape: a second label naming the same shape lands on top of the first',
   stickFigure:
     'a stick person centred at `x`,`y`; put whatever it represents in `label` and the words are written under its feet, so it is never an unlabelled figure',
   underline:
-    'a wobbly line under text, starting at `x`,`y` and running right `w`; name the label in `underLabel` and the line is sized to the words it underlines',
+    'a line under text, starting at `x`,`y` and running right `w`; name the label in `underLabel` and the line is sized to the words it underlines',
   connector:
-    'a plain wobbly line from `from` to `to`, for linking two things; name the shapes in `fromShape`/`toShape` and its ends are moved onto their edges',
+    'a plain line from `from` to `to`, for linking two things; name the shapes in `fromShape`/`toShape` and its ends are moved onto their edges',
   cloud: 'a cloud outline centred at `x`,`y`, for thoughts or "the cloud"',
   crossOut:
     'a large X drawn across another shape, for something broken, cancelled or removed; `target` is the index of the shape it crosses',
+  card: 'a flat rounded rectangle at `x`,`y` with a few words in `title` drawn inside its top; use it for one concept -- a titled card with a label centred in it beats a box plus a separate title label',
+  container:
+    'a large dashed rounded rectangle with a faint tint, drawn behind other shapes to group them; list it BEFORE the shapes inside it so they draw on top',
+  badge:
+    'a small filled circle centred at `x`,`y` holding a 1-3 character symbol in `text`, like a numbered step or a tick; size it with `r`',
+  bulletList:
+    'a titled list running down the board from `x`,`y`: `title` first, then each `items` phrase on its own dotted line, at most 6 short phrases; every word counts toward the scene label-word budget',
+  divider:
+    'a short horizontal rule from `x`,`y` running right `w`, for separating one part of the board from another',
 };
 
-/** Which kinds carry which anchor fields. Adding one here reaches the provider. */
+/**
+ * Which fields are optional in the stored form and required-but-nullable for
+ * the provider. Most are anchors, which say which other shape a shape belongs
+ * to; `stickFigure.label` and the composite kinds' text fields are carried text
+ * rather than anchors, but they need the same treatment -- the strict subset has
+ * no way to leave a property out of `required`. Adding one here reaches the
+ * provider.
+ */
 const ANCHORED_FIELDS: Partial<Record<ShapeKind, readonly string[]>> = {
   arrow: ['fromShape', 'toShape'],
   label: ['inShape'],
   stickFigure: ['label'],
   underline: ['underLabel'],
   connector: ['fromShape', 'toShape'],
+  card: ['title'],
+  badge: ['text'],
+  bulletList: ['title'],
 };
 
 /**
@@ -364,10 +455,12 @@ export function countWords(text: string): number {
 }
 
 /**
- * Every word the scene writes on the board: the labels, and the captions under
- * the figures. One budget covers both -- a caption is written in the same
- * handwriting as a label and takes up the same room, so letting figure captions
- * go uncounted would be a way to get text onto the board past the cap.
+ * Every word the scene writes on the board: the labels, the captions under the
+ * figures, and the words the composite shapes carry -- a card's title, a
+ * badge's symbol, a list's heading and items. One budget covers all of them --
+ * they are written in the same handwriting as a label and take up the same
+ * room, so letting carried text go uncounted would be a way to get words onto
+ * the board past the cap.
  */
 export function countLabelWords(shapes: Shape[]): number {
   let total = 0;
@@ -376,6 +469,15 @@ export function countLabelWords(shapes: Shape[]): number {
       total += countWords(shape.text);
     } else if (shape.kind === 'stickFigure' && shape.label) {
       total += countWords(shape.label);
+    } else if (shape.kind === 'card' && shape.title) {
+      total += countWords(shape.title);
+    } else if (shape.kind === 'badge' && shape.text) {
+      total += countWords(shape.text);
+    } else if (shape.kind === 'bulletList') {
+      total += shape.title ? countWords(shape.title) : 0;
+      for (const item of shape.items) {
+        total += countWords(item);
+      }
     }
   }
   return total;
@@ -436,10 +538,12 @@ export const SceneShapeSchema = sceneOf(ShapeSchema);
  * interchangeable: `x + r` refuses a circle that fits the right edge and accepts
  * one hanging off the bottom.
  *
- * Anchored shapes (`box`, `underline`) cannot leave the left or the top: their
- * x and y *are* their left and top, and both are 0-100 already. Centred shapes
- * (`circle`, `cloud`, `stickFigure`) can poke out on any side, so all four are
- * checked.
+ * Anchored shapes (`box`, `card`, `container`, `underline`, `divider`) cannot
+ * leave the left or the top: their x and y *are* their left and top, and both
+ * are 0-100 already. A `bulletList` is the same about its left edge, and its
+ * bottom is measured from the size it settles on -- the same arithmetic the
+ * layout pass places it with. Centred shapes (`circle`, `badge`, `cloud`,
+ * `stickFigure`) can poke out on any side, so all four are checked.
  */
 function checkBoardExtents(shapes: Shape[], ctx: z.RefinementCtx): void {
   /** A length in percent of board height, as a percent of board width. */
@@ -466,6 +570,8 @@ function checkBoardExtents(shapes: Shape[], ctx: z.RefinementCtx): void {
   shapes.forEach((shape, index) => {
     switch (shape.kind) {
       case 'box':
+      case 'card':
+      case 'container':
         if (shape.x + shape.w > 100) {
           over(index, 'w', shape.x + shape.w, 100);
         }
@@ -474,6 +580,7 @@ function checkBoardExtents(shapes: Shape[], ctx: z.RefinementCtx): void {
         }
         break;
       case 'underline':
+      case 'divider':
         if (shape.x + shape.w > 100) {
           over(index, 'w', shape.x + shape.w, 100);
         }
@@ -483,10 +590,25 @@ function checkBoardExtents(shapes: Shape[], ctx: z.RefinementCtx): void {
         centred(index, 'w', shape.x - shape.w / 2, shape.x + shape.w / 2);
         centred(index, 'h', shape.y - shape.h / 2, shape.y + shape.h / 2);
         break;
-      case 'circle': {
+      case 'circle':
+      case 'badge': {
         const half = across(shape.r);
         centred(index, 'r', shape.x - half, shape.x + half);
         centred(index, 'r', shape.y - shape.r, shape.y + shape.r);
+        break;
+      }
+      case 'bulletList': {
+        // The bottom is the list's own arithmetic: the size it settles on,
+        // measured by the same `list-metrics` functions the layout pass places
+        // it with, so the validator and the renderer cannot disagree about how
+        // tall a list is.
+        if (shape.x + shape.w > 100) {
+          over(index, 'w', shape.x + shape.w, 100);
+        }
+        const bottom = shape.y + bulletListHeight(shape, bulletItemSize(shape));
+        if (bottom > 100) {
+          over(index, 'h', bottom, 100);
+        }
         break;
       }
       case 'stickFigure': {
@@ -559,6 +681,26 @@ export const SceneSchema = SceneShapeSchema.superRefine((scene, ctx) => {
       message: `scene draws ${scene.shapes.length} shapes, outside the range ${MIN_SHAPES_PER_SCENE}-${MAX_SHAPES_PER_SCENE}`,
     });
   }
+  // The strict output subset cannot express `maxItems`, so the list cap lives
+  // here with the other whole-scene rules, where the repair pass can see it.
+  scene.shapes.forEach((shape, index) => {
+    if (shape.kind !== 'bulletList') {
+      return;
+    }
+    if (shape.items.length === 0) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shapes', index, 'items'],
+        message: 'a bulletList with no items draws nothing; give it at least one short phrase',
+      });
+    } else if (shape.items.length > BULLET_MAX_ITEMS) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shapes', index, 'items'],
+        message: `this list has ${shape.items.length} items; at most ${BULLET_MAX_ITEMS} fit on one list`,
+      });
+    }
+  });
   checkBoardExtents(scene.shapes, ctx);
 });
 

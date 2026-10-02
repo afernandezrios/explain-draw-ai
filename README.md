@@ -1,8 +1,8 @@
 # Explain-Draw AI
 
-Paste a topic or an explanation. It becomes a script, a drawn storyboard, and a
-~5 minute hand-drawn whiteboard video with spoken narration, all on your own
-machine.
+Paste a topic or an explanation. It becomes a script, a storyboard of clean,
+flat diagram scenes, and a ~5 minute explainer video with spoken narration, all
+on your own machine.
 
 Text → LLM (script + scene list) → zod validation → Piper speaks each scene's
 narration on this machine → Remotion + rough.js draw each scene with its audio
@@ -17,6 +17,13 @@ baked into the clip → ffmpeg joins the scene clips into `out.mp4`.
 > with millions of users.
 
 [▶ Watch demo.mp4](demo.mp4)
+
+It was recorded before the current visual overhaul, so its scenes are drawn in
+the older, rougher style. What you get today is crisper: rounded flat shapes
+with pastel fills on a dot grid, an eight-colour palette (`ink`, `accent`,
+`emphasis`, `success`, `warn`, `violet`, `teal`, `gray`) and a shape
+vocabulary that includes cards, badges, containers and bullet lists alongside
+boxes, circles, arrows and stick figures.
 
 ## Setup
 

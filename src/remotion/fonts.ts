@@ -12,7 +12,7 @@
  * in `public/fonts`, so previewing works offline.
  */
 
-import { loadFont } from '@remotion/google-fonts/Caveat';
+import { loadFont } from '@remotion/google-fonts/ArchitectsDaughter';
 import { cancelRender, continueRender, delayRender } from 'remotion';
 import { FONT_FAMILY } from '../lib/board.ts';
 

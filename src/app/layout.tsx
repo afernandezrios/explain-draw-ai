@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'Explain-Draw AI',
-  description: 'Turn a topic into a hand-drawn whiteboard video.',
+  description: 'Turn a topic into a clean, diagram-style explainer video.',
 };
 
 export default function RootLayout({ children }: { children: ReactNode }) {

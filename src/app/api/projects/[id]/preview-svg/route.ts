@@ -71,7 +71,13 @@ export async function GET(request: Request, { params }: Params): Promise<Respons
     );
   }
 
-  return new Response(fullSceneSvg(scene, { fontDataUri: fontDataUri() }), {
+  const svg = fullSceneSvg(scene, {
+    fontDataUri: fontDataUri(),
+    sceneIndex,
+    totalScenes: scenes.scenes.length,
+  });
+
+  return new Response(svg, {
     status: 200,
     headers: {
       'Content-Type': 'image/svg+xml; charset=utf-8',
