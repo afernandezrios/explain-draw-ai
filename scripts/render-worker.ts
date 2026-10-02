@@ -44,8 +44,6 @@ import {
   AUDIO_SILENCE_MAX_VOLUME_DB,
   CLIPS_DIRNAME,
   CRF,
-  DEFAULT_PIPER_MODELS_DIR,
-  DEFAULT_PIPER_VOICE,
   fittedSceneSeconds,
   FPS,
   IMAGE_FORMAT,
@@ -55,8 +53,6 @@ import {
   NARRATION_DIRNAME,
   NARRATION_OVERRUN_TOLERANCE_SECONDS,
   OUTPUT_FILENAME,
-  PIPER_MODELS_DIR_ENV,
-  PIPER_VOICE_ENV,
   PIXEL_FORMAT,
   PREVIEW_CLIP_FILENAME,
   PREVIEW_FILENAME,
@@ -78,6 +74,7 @@ import {
   validateScenes,
   type Scene,
 } from '../src/lib/schema.ts';
+import { synthesize } from '../src/lib/tts.ts';
 
 const WORKER_DIR = import.meta.dirname;
 const PROJECT_ROOT = path.resolve(WORKER_DIR, '..');
@@ -202,45 +199,20 @@ const { cancelSignal, cancel } = makeCancelSignal();
 let cancelled = false;
 /** ffmpeg during the join, so a cancel does not have to wait for the whole concat. */
 let ffmpegChild: ChildProcess | null = null;
-/**
- * piper during narration synthesis, so cancel does not have to wait for the
- * voice -- and, because synthesis is overlapped with the bundle and the renders,
- * so a failure or a cancel can reach a voice that is still being spoken for a
- * scene nobody will draw.
- */
-let piperChild: ChildProcess | null = null;
 
 function requestCancel(): void {
   cancelled = true;
   cancel();
-  // Both children are killed and then awaited by their own callers, so a cancel
-  // never leaves a half-written WAV or join behind.
-  for (const child of [ffmpegChild, piperChild]) {
-    if (!child) {
-      continue;
-    }
+  // The child is killed and then awaited by its caller, so a cancel never
+  // leaves a half-written join behind. Narration has no child to kill: kokoro
+  // speaks in-process, so a synthesis already under way is abandoned and dies
+  // with this process.
+  if (ffmpegChild) {
     try {
-      child.kill('SIGTERM');
+      ffmpegChild.kill('SIGTERM');
     } catch {
       // Already gone; the exit handler still runs.
     }
-  }
-}
-
-/**
- * Kills the piper child, if one is speaking. With synthesis overlapped with the
- * render, a failed or cancelled job can arrive while the *next* scene's voice is
- * in flight; that voice belongs to this job and must not outlive it. The WAV it
- * was writing is cleaned up by its own caller's `finally`.
- */
-function killPiper(): void {
-  if (!piperChild) {
-    return;
-  }
-  try {
-    piperChild.kill('SIGTERM');
-  } catch {
-    // Already gone; the exit handler still runs.
   }
 }
 
@@ -380,80 +352,6 @@ async function concatClips(
 }
 
 /* ──────────────────────────── narration ─────────────────────────── */
-
-const PIPER_INSTALL_HINT =
-  'Piper speaks the narration. Install it with `python3 -m pip install piper-tts`, put its command on PATH, and download a voice (see the README prerequisites).';
-
-/**
- * Where piper finds its voice: the model file, and the directory it is resolved
- * from.
- *
- * `PIPER_MODELS_DIR` names the directory the voice lives in; unset, voices live
- * in the repo's `models/`. Both the configured value and the default are
- * resolved against the worker's own root rather than the working directory, so
- * the same setting and the same render find the same voice from anywhere --
- * `PIPER_MODELS_DIR=models` means the repo's `models/`, not a `models/` beside
- * whatever folder the render was started from.
- *
- * The model path is always passed to piper absolute, so piper needs no
- * data-dir flag to look the voice up -- naming the file means the voice is
- * exactly the configured one and never a stray `.onnx` that happens to sit in
- * the working directory.
- */
-function piperConfig(): { voice: string; modelPath: string } {
-  const voice = process.env[PIPER_VOICE_ENV]?.trim() || DEFAULT_PIPER_VOICE;
-  const configured = process.env[PIPER_MODELS_DIR_ENV]?.trim();
-  const modelsDir = configured
-    ? path.resolve(PROJECT_ROOT, configured)
-    : path.join(PROJECT_ROOT, DEFAULT_PIPER_MODELS_DIR);
-  return { voice, modelPath: path.join(modelsDir, `${voice}.onnx`) };
-}
-
-/**
- * Speaks one narration into `outputPath` with piper, text as the positional
- * argument after `--` -- the invocation piper's own docs show (`piper -m
- * voice.onnx -f out.wav -- 'text'`), so the voice, the output and the words can
- * never be confused with a flag, and the text needs no shell.
- *
- * Synthesis is local and offline: piper is spawned, never imported or bundled,
- * and the child is tracked so a cancel reaches it the way it reaches ffmpeg.
- * Missing piper (ENOENT) and a missing or unusable voice both come back as
- * errors that name what to install; there is no silent fallback.
- */
-function runPiper(options: { text: string; outputPath: string }): Promise<void> {
-  const { voice, modelPath } = piperConfig();
-  return new Promise((resolve, reject) => {
-    const child = spawn(
-      'piper',
-      ['-m', modelPath, '-f', options.outputPath, '--', options.text],
-      { stdio: ['ignore', 'ignore', 'pipe'] },
-    );
-    piperChild = child;
-    let stderr = '';
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString();
-      if (stderr.length > 8000) {
-        stderr = stderr.slice(-8000);
-      }
-    });
-    child.on('error', (error) => {
-      piperChild = null;
-      reject(new Error(`piper could not start: ${error.message}. ${PIPER_INSTALL_HINT}`));
-    });
-    child.on('close', (code) => {
-      piperChild = null;
-      if (code === 0) {
-        resolve();
-      } else {
-        reject(
-          new Error(
-            `piper exited with code ${code} speaking the voice "${voice}" from ${modelPath}: ${stderr.slice(-600).trim()} ${PIPER_INSTALL_HINT}`,
-          ),
-        );
-      }
-    });
-  });
-}
 
 /** Runs ffprobe and returns its stdout, or throws with the reason it could not. */
 function runFfprobe(args: string[]): Promise<string> {
@@ -637,8 +535,12 @@ async function synthesizeNarration(options: {
 
   try {
     // One argument, one breath: whitespace collapses to single spaces, so a
-    // narration with a break in it is spoken as one unbroken line.
-    await runPiper({ text: scene.narration.replace(/\s+/g, ' ').trim(), outputPath: tempPath });
+    // narration with a break in it is spoken as one unbroken line. The status
+    // callback speaks up only while the model is downloading itself on the
+    // first run.
+    await synthesize(scene.narration.replace(/\s+/g, ' ').trim(), tempPath, (message) =>
+      writeStatus({ message }),
+    );
     if (cancelled) {
       throw new CancelledError(`cancelled while narrating scene ${index + 1}`);
     }
@@ -685,7 +587,7 @@ type NarrationJob = {
  * only after a bundle or a render, and a rejection left unhandled for that long
  * would crash the process under Node's default unhandled-rejection policy. The
  * await still rethrows the original error, so an overrun refusal or a failed
- * piper surfaces exactly where the serial pre-flight stage surfaced it.
+ * synthesis surfaces exactly where the serial pre-flight stage surfaced it.
  */
 function startNarration(scene: Scene, index: number, narrationDir: string): NarrationJob {
   let done = false;
@@ -1057,8 +959,8 @@ async function main(argv: string[]): Promise<number> {
       abortIfCancelled('narration synthesis');
       publishNarration(index);
 
-      // The next scene's voice starts now, so piper speaks while this scene
-      // draws -- and never more than one piper at a time.
+      // The next scene's voice starts now, so kokoro speaks while this scene
+      // draws -- and never more than one synthesis at a time.
       if (index + 1 < scenes.length) {
         narrationJob = startNarration(scenes[index + 1], index + 1, narrationDir);
       }
@@ -1080,10 +982,8 @@ async function main(argv: string[]): Promise<number> {
         // -- would ship a video that is mute for that scene's whole length.
         await requireAudibleTrack(clip, `the clip for scene ${index + 1}`);
       } catch (error) {
-        // A failed render must not leave the next scene's voice speaking into a
-        // project nobody is rendering. (A cancel killed it already, in
-        // requestCancel.)
-        killPiper();
+        // A failed render abandons the next scene's voice: it belongs to this
+        // job and dies with this process.
         throw error;
       }
       clipFiles.push(clip);
@@ -1106,10 +1006,8 @@ async function main(argv: string[]): Promise<number> {
     );
     return finish('done', 'Render complete.');
   } catch (error) {
-    // A bundle or verify failure can leave the next scene's voice mid-speech;
-    // it belongs to this job and must not outlive it. (A cancel killed it
-    // already, in requestCancel.)
-    killPiper();
+    // A bundle or verify failure can leave the next scene's synthesis in
+    // flight; it belongs to this job and dies with this process.
     if (error instanceof CancelledError || cancelled) {
       // Finished clips stay on disk: a retry re-renders every scene, so they
       // are a starting point for a person, not for the next run.

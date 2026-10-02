@@ -4,7 +4,7 @@ Paste a topic or an explanation. It becomes a script, a storyboard of clean,
 flat diagram scenes, and a ~5 minute explainer video with spoken narration, all
 on your own machine.
 
-Text → LLM (script + scene list) → zod validation → Piper speaks each scene's
+Text → LLM (script + scene list) → zod validation → Kokoro speaks each scene's
 narration on this machine while Remotion draws the previous scene, the audio
 baked into the clip → ffmpeg joins the scene clips into `out.mp4`.
 
@@ -32,14 +32,11 @@ boxes, circles, arrows and stick figures.
 - **Node 24** (the render worker is TypeScript run directly by Node) and npm.
 - **ffmpeg** on `PATH`, which includes **ffprobe** — the worker measures every
   narration and every clip with it before joining them.
-- **Python 3 and Piper** for the narration:
-
-  ```bash
-  python3 -m venv .venv && . .venv/bin/activate  # keeps pip out of the system Python
-  pip install piper-tts
-  mkdir -p models
-  python3 -m piper.download_voices --data-dir models en_US-lessac-medium
-  ```
+- **Nothing extra for the narration.** Kokoro, the local text-to-speech engine,
+  ships with `npm install` (the `kokoro-js` dependency) and runs in-process in
+  the render worker. The first narration downloads the quantized Kokoro-82M
+  model (~90 MB) into `models/`, so the first render needs network the way the
+  font download already does; after that, narration is offline.
 
 - **A model endpoint.** The pipeline asks for strict structured outputs first
   (`response_format: json_schema`); endpoints that reject it (DeepSeek answers
@@ -82,18 +79,18 @@ bookmark comes back to the same project.
 | `OPENAI_BASE_URL` | `https://api.deepseek.com` | Any OpenAI-compatible endpoint. |
 | `OPENAI_MODEL` | `deepseek-v4-flash` | Any model your endpoint serves. |
 | `PROJECTS_DIR` | `./projects` | Where project folders are written. |
-| `PIPER_VOICE` | `en_US-lessac-medium` | The Piper voice. Its `.onnx` file and its `.onnx.json` must both sit in `PIPER_MODELS_DIR`. |
-| `PIPER_MODELS_DIR` | `./models` | Where the voice models live. A relative value is resolved against the repo root, not the working directory. |
+| `KOKORO_VOICE` | `af_heart` | The Kokoro voice. One of the voices kokoro-js bundles (`af_heart`, `af_bella`, `am_michael`, `bf_emma`, …); an unknown name is refused with the full list. |
+| `KOKORO_MODELS_DIR` | `./models` | Where the Kokoro model is downloaded on first use. A relative value is resolved against the repo root, not the working directory. |
 
 `.env.local` is gitignored.
 
-The `PIPER_*` rows are read by the render *worker*, not by the Next server: a
+The `KOKORO_*` rows are read by the render *worker*, not by the Next server: a
 render the app starts sees them (the server passes its environment on to the
 worker it spawns), but a render you start from your terminal does not — export
 them in that shell first:
 
 ```bash
-export PIPER_MODELS_DIR=$HOME/piper-voices
+export KOKORO_MODELS_DIR=$HOME/kokoro-models
 npm run render -- --project projects/<id>
 ```
 

@@ -15,10 +15,12 @@
     "render": "node scripts/render-worker.ts"
   },
   "dependencies": {
+    "@huggingface/transformers": "3.5.1",
     "@remotion/bundler": "4.0.524",
     "@remotion/google-fonts": "4.0.524",
     "@remotion/media": "4.0.524",
     "@remotion/renderer": "4.0.524",
+    "kokoro-js": "1.2.1",
     "next": "15.5.25",
     "openai": "7.15.0",
     "react": "19.3.0",

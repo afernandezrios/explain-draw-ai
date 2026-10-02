@@ -14,7 +14,7 @@ npm run render -- --project projects/<id>          # whole video, via the worker
 npm run render -- --project projects/<id> --scene 3 # one scene as preview.mp4
 ```
 
-There is no unit-test layer; every test is an e2e test in `tests/e2e/` and `npm test` renders **real video** with real ffmpeg, Chrome and Piper. It is slow in the way the product is slow, and the full-render test is the slowest thing in the repo by far. Suite-wide settings live in `vitest.config.mts` (`fileParallelism: false` and long timeouts are deliberate — two concurrent renders is what the render lock exists to prevent, on a 7.6 GiB machine).
+There is no unit-test layer; every test is an e2e test in `tests/e2e/` and `npm test` renders **real video** with real ffmpeg, Chrome and Kokoro. It is slow in the way the product is slow, and the full-render test is the slowest thing in the repo by far. Suite-wide settings live in `vitest.config.mts` (`fileParallelism: false` and long timeouts are deliberate — two concurrent renders is what the render lock exists to prevent, on a 7.6 GiB machine).
 
 In this project's workflow the test suite and the fixtures are the maintainer's step: the specs under `_bmad-output/` routinely freeze `tests/` and the fixtures and hand `npm test` to a human pass. Check with the maintainer before writing or modifying tests as part of a feature change.
 
@@ -55,10 +55,10 @@ A project is a folder under `PROJECTS_DIR` (`src/lib/render-config.ts` names eve
 
 ### The worker's stage order
 
-validate storyboard → take lock → ensure browser → bundle (overlapped by the first scene's piper) → per-scene render, each overlapped by the next scene's piper → ffprobe each clip → ffmpeg concat `-c copy`. Exit codes: `0` success, `1` refusal/failure, `130` cancelled.
+validate storyboard → take lock → ensure browser → bundle (overlapped by the first scene's narration) → per-scene render, each overlapped by the next scene's narration → ffprobe each clip → ffmpeg concat `-c copy`. Exit codes: `0` success, `1` refusal/failure, `130` cancelled.
 
-- Narration is synthesized unconditionally, one WAV per scene (`narration/scene-NNN.wav`), never reused from a previous run, and never more than one piper at a time: each scene's voice is spoken while the previous scene renders, so each WAV only has to exist before its own scene's `renderMedia` (the bundle symlinks the narration directory as its public dir, so a WAV renamed into place after the bundle is servable; on Windows each post-bundle WAV is copied into the served directory first). Each WAV is ffprobed against its scene's frame-rounded length plus one tolerance constant; an overrun refuses the render rather than speeding the voice up or truncating it — one found mid-run leaves the finished clips on disk, like a cancel.
-- Piper is an external subprocess only — spawned from PATH, never imported or bundled (it is GPL; the app's own code must not link it).
+- Narration is synthesized unconditionally, one WAV per scene (`narration/scene-NNN.wav`), never reused from a previous run, and never more than one synthesis at a time: each scene's voice is spoken while the previous scene renders, so each WAV only has to exist before its own scene's `renderMedia` (the bundle symlinks the narration directory as its public dir, so a WAV renamed into place after the bundle is servable; on Windows each post-bundle WAV is copied into the served directory first). Each WAV is ffprobed against its scene's frame-rounded length plus one tolerance constant; an overrun refuses the render rather than speeding the voice up or truncating it — one found mid-run leaves the finished clips on disk, like a cancel.
+- Kokoro runs in-process inside the worker only — `src/lib/tts.ts` wraps kokoro-js (Apache-2.0) on `@huggingface/transformers`/onnxruntime-node, on the CPU. Only `scripts/render-worker.ts` imports it: it drags native ONNX code, so the Next server and the composition must never reach it. The q8 Kokoro-82M model (~90 MB) downloads into `KOKORO_MODELS_DIR` on the first narration — that first render needs network the way the font download already does — and there is no subprocess to kill: a cancelled or failed render abandons the in-flight synthesis and exits.
 - Audio is baked into each scene clip (`<Audio>` in `src/remotion/Scene.tsx`, `enforceAudioTrack`, `AUDIO_*` constants), never muxed afterwards. The join is `-c copy`, which is only lossless while every clip agrees on codec, pixel format, frame rate, canvas **and** audio parameters — that agreement is the whole reason those constants live together in `src/lib/render-config.ts` instead of at each call site. `MAX_FRAME_CONCURRENCY` is pinned at 2 by the RAM budget and is not a supported knob. Frames are captured as JPEG at quality 95 (`JPEG_QUALITY`; measurably cheaper than PNG capture for this content) and encoded h264 CRF 18 preset `medium` — capture and encoder settings like those do not affect the `-c copy` agreement, which is about codec, pixel format, frame rate, canvas and audio parameters only.
 - A clip whose loudest sample is at or below `AUDIO_SILENCE_MAX_VOLUME_DB` is refused: an audio stream's presence proves nothing, since `enforceAudioTrack` produces one whether or not anything played.
 
@@ -83,7 +83,7 @@ Text widths come from a generated table (`src/lib/text-metrics.ts`) — regenera
 
 ## Environment
 
-`.env.local` is read by the **Next server only**: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `PROJECTS_DIR`, and the `PIPER_*` pair. The app passes its environment on to the worker it spawns, so app renders see them — but the worker does **not** read `.env.local` itself, so a render started from your terminal needs `PIPER_MODELS_DIR`/`PIPER_VOICE` exported in that shell. Relative `PIPER_MODELS_DIR` resolves against the project root, not the working directory.
+`.env.local` is read by the **Next server only**: `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `OPENAI_MODEL`, `PROJECTS_DIR`, and the `KOKORO_*` pair. The app passes its environment on to the worker it spawns, so app renders see them — but the worker does **not** read `.env.local` itself, so a render started from your terminal needs `KOKORO_MODELS_DIR`/`KOKORO_VOICE` exported in that shell. Relative `KOKORO_MODELS_DIR` resolves against the project root, not the working directory.
 
 The code's defaults are DeepSeek (`DEFAULT_BASE_URL`/`DEFAULT_MODEL` in `src/lib/llm.ts`), while the README's env table still lists OpenAI's endpoint and model. The code wins; the README row is drift.
 
@@ -91,10 +91,10 @@ DeepSeek rejects the strict `json_schema` mode, so every generate normally pays 
 
 ## Gotchas
 
-- **Rendering is not offline.** The renderer loads Architects Daughter through `@remotion/google-fonts` at render time and fails loudly without network. The in-app preview embeds `public/fonts/architects-daughter-latin-400.woff2` instead, and `src/remotion/index.ts` imports `fonts.ts` for its side effect only — a tree-shaking change there would silently render every label in a fallback face.
+- **Rendering is not offline.** The renderer loads Architects Daughter through `@remotion/google-fonts` at render time and fails loudly without network, and the first narration downloads Kokoro's model (see the worker's stage order). The in-app preview embeds `public/fonts/architects-daughter-latin-400.woff2` instead, and `src/remotion/index.ts` imports `fonts.ts` for its side effect only — a tree-shaking change there would silently render every label in a fallback face.
 - Two tsconfigs: the root one **excludes** `src/remotion`, which has its own. `npm run typecheck` runs both.
 - Route handlers set `runtime = 'nodejs'` and `dynamic = 'force-dynamic'`, and `next.config.js` keeps `@remotion/renderer` and `@remotion/bundler` out of the server bundle (they spawn children and resolve native binaries from their own directory). Vitest aliases `next/server` to `next/server.js` for the same class of reason.
-- `NARRATION_WPS = 2.5` in `src/lib/schema.ts` is asserted, never measured — accepted storyboards can in principle be refused at render time if the voice speaks slower. It is on the deferred-work list; lower the constant if the first real render bites.
+- `NARRATION_WPS = 2.5` in `src/lib/schema.ts` is asserted, never measured — accepted storyboards can in principle be refused at render time if the voice speaks slower. The old Piper voice measured ~3.6 words/s; the Kokoro voice has not been measured yet and is on the deferred-work list. Lower the constant if the first real render bites.
 - Remotion is the one dependency with a licence worth checking before commercial use; the README links the terms.
 
 ## Specs and workflow

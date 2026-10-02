@@ -87,22 +87,6 @@ export const NARRATION_DIRNAME = 'narration';
  */
 export const NARRATION_OVERRUN_TOLERANCE_SECONDS = 1 / FPS;
 
-/**
- * Piper, the local text-to-speech engine (see the README's prerequisites).
- *
- * The worker spawns `piper` from PATH, and `PIPER_MODELS_DIR` is the directory
- * the voice's model file is resolved from: the worker passes the joined,
- * absolute `<dir>/<voice>.onnx` path to piper, so a relative directory here is
- * resolved against the project root rather than the working directory. Nothing
- * here is bundled or uploaded: synthesis is a local subprocess, and the default
- * voice is the one model the README asks the user to download.
- */
-export const PIPER_VOICE_ENV = 'PIPER_VOICE';
-export const PIPER_MODELS_DIR_ENV = 'PIPER_MODELS_DIR';
-export const DEFAULT_PIPER_VOICE = 'en_US-lessac-medium';
-/** Relative to the project's own root, not the working directory. */
-export const DEFAULT_PIPER_MODELS_DIR = 'models';
-
 /** The app's only cross-project state: at most one render exists at a time. */
 export const LOCK_FILENAME = '.active-render.json';
 
@@ -135,10 +119,11 @@ export function secondsToFrames(seconds: number): number {
  * the trim-only fit.
  *
  * A storyboard's `durationSeconds` is the model's estimate of how long its scene
- * needs, spoken at `NARRATION_WPS` -- but Piper speaks faster than that rate and
- * the prompt asks the model to leave headroom, so the WAV routinely ends seconds
- * before the scene does. Left alone, every scene ends in dead air. So the clip
- * is rendered for the measurement instead: the narration plus a small tail.
+ * needs, spoken at `NARRATION_WPS` -- but the voice speaks faster than that rate
+ * and the prompt asks the model to leave headroom, so the WAV routinely ends
+ * seconds before the scene does. Left alone, every scene ends in dead air. So
+ * the clip is rendered for the measurement instead: the narration plus a small
+ * tail.
  *
  * `NARRATION_TAIL_SECONDS` is that tail -- a beat between one scene's voice and
  * the next's. `MIN_FITTED_SCENE_SECONDS` is the floor: a very short narration
