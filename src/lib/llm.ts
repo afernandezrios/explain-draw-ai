@@ -150,12 +150,12 @@ export const SCRIPT_SYSTEM_PROMPT = [
  * Every whole-second scene length and the words it allows, as one table.
  *
  * This replaces three anchors (7s, 10s, 20s) that all happened to divide evenly
- * by the rate. They taught the model to multiply by 2.5 and never to round down,
- * while every *odd* length lands on a half word -- 2.5 words per second of 19
- * seconds is 47.5, and the validator floors that to 47. A storyboard one word
- * over on one scene is rejected whole, so the arithmetic is worth stating rather
- * than leaving the model to interpolate. Derived from `maxNarrationWords`, so the
- * table and the check cannot disagree.
+ * by the rate then in use (2.5). They taught the model to multiply and never to
+ * round down, while odd lengths landed on half words -- 2.5 words per second of
+ * 19 seconds is 47.5, and the validator floors that to 47. A storyboard one word
+ * over on one scene is rejected whole, so the table states the arithmetic rather
+ * than leaving the model to interpolate. Derived from `maxNarrationWords`, so
+ * the table and the check cannot disagree.
  */
 const NARRATION_BUDGET_TABLE = Array.from(
   { length: MAX_SCENE_SECONDS - MIN_SCENE_SECONDS + 1 },
@@ -167,8 +167,8 @@ const NARRATION_BUDGET_TABLE = Array.from(
 
 /**
  * The rounding rule, said once and quoted twice -- the prompt and the trailing
- * reminder both need it. The example is an odd scene length, which is the case
- * that lands on a half word.
+ * reminder both need it. The example is an odd scene length: the case that
+ * carries a rounding decision whenever the rate is not a whole number.
  */
 function narrationRoundingExample(): string {
   // An even maximum means the odd length below it is in range; an odd maximum is

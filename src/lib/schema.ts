@@ -53,8 +53,14 @@ export const MAX_LABEL_WORDS = 20;
  * scene's duration sets its narration word budget (`maxNarrationWords`), and the
  * render worker refuses narration audio that would overrun the scene rather than
  * speeding the voice up to fit.
+ *
+ * Calibrated against the voice that speaks it. Piper measured ~3.6 words/s, so
+ * the long-standing 2.5 left ~30% of slack; Kokoro's af_heart measured 2.28-3.05
+ * across a real storyboard (mean 2.60) and scenes written to the full 2.5 budget
+ * were refused at the slow end, so the rate is 2.0 -- about 12% under the
+ * slowest measured text. Re-measure when `KOKORO_VOICE` changes.
  */
-export const NARRATION_WPS = 2.5;
+export const NARRATION_WPS = 2.0;
 
 /**
  * The words one scene's narration may run to: that scene's own length at
