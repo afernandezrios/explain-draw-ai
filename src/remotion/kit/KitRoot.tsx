@@ -15,8 +15,9 @@
  */
 
 import React from 'react';
-import { Composition, Folder } from 'remotion';
+import { Composition, Folder, type CalculateMetadataFunction } from 'remotion';
 import { CANVAS } from './tokens.ts';
+import { toFrames } from './animation/timing.ts';
 import { TitleScene, type TitleSceneProps } from './scenes/TitleScene.tsx';
 import { PointsScene, type PointsSceneProps } from './scenes/PointsScene.tsx';
 import { FlowScene, type FlowSceneProps } from './scenes/FlowScene.tsx';
@@ -26,16 +27,28 @@ import { CodeScene, type CodeSceneProps } from './scenes/CodeScene.tsx';
 import { PrimitivesGallery } from './PrimitivesGallery.tsx';
 
 /** Eight seconds: long enough for every scene type to finish its own pacing. */
-const DEMO_FRAMES = 8 * CANVAS.fps;
+const DEMO_SECONDS = 8;
+const DEMO_FRAMES = DEMO_SECONDS * CANVAS.fps;
 
 const TITLE: TitleSceneProps = {
   eyebrow: 'Chapter 02',
+  accentLabel: 'Deep dive',
   title: 'Designing a REST API',
   subtitle: 'Resources, verbs, and the status codes that carry the meaning.',
   tags: ['GET', 'POST', 'PATCH', 'DELETE', '201 Created'],
   footnote: 'Backend fundamentals',
+  motif: 'nodes',
+  // The card is the one scene whose length is worth typing in the Studio: set
+  // it here and the composition below follows. The scene itself never reads
+  // it -- a render tells it how long it is.
+  durationSeconds: DEMO_SECONDS,
   accent: 'blue',
 };
+
+/** Reads `durationSeconds`, so the title card can be previewed at any length. */
+const titleMetadata: CalculateMetadataFunction<TitleSceneProps> = ({ props }) => ({
+  durationInFrames: toFrames(props.durationSeconds ?? DEMO_SECONDS, CANVAS.fps),
+});
 
 const POINTS: PointsSceneProps = {
   eyebrow: 'Architecture',
@@ -170,6 +183,7 @@ export const KitRoot: React.FC = () => (
       width={CANVAS.width}
       height={CANVAS.height}
       defaultProps={TITLE}
+      calculateMetadata={titleMetadata}
     />
     <Composition
       id="KitPoints"

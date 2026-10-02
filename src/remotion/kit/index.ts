@@ -79,11 +79,13 @@ export { Connection } from './primitives/Connection.tsx';
 export type { ConnectionAnchor, ConnectionProps } from './primitives/Connection.tsx';
 export { Node } from './primitives/Node.tsx';
 export type { NodeProps } from './primitives/Node.tsx';
+export { MOTIF_VARIANTS, Motif } from './primitives/Motif.tsx';
+export type { MotifProps, MotifVariant } from './primitives/Motif.tsx';
 
 // Animation: when things happen, and how they arrive.
 export { Reveal } from './animation/Reveal.tsx';
 export type { RevealProps } from './animation/Reveal.tsx';
-export { REVEAL_PRESETS, ramp, revealStyle } from './animation/presets.ts';
+export { REVEAL_PRESETS, easeBetween, ramp, revealStyle } from './animation/presets.ts';
 export type { RevealPreset } from './animation/presets.ts';
 export { loopProgress, paceReveals, staggerTimings, toFrames } from './animation/timing.ts';
 export type { PaceOptions, ScenePace, Timing } from './animation/timing.ts';
@@ -108,6 +110,8 @@ export { depthByNode } from './lib/graph.ts';
 export type { GraphEdge } from './lib/graph.ts';
 export { LANGUAGES, LANGUAGE_LABEL, tokenize, tokenizeLine } from './lib/highlight.ts';
 export type { Language, Token, TokenKind } from './lib/highlight.ts';
+export { ADVANCE, estimatedLineCount, fitFontSize } from './lib/fit.ts';
+export type { FitOptions } from './lib/fit.ts';
 
 // The scene types.
 export { TitleScene } from './scenes/TitleScene.tsx';

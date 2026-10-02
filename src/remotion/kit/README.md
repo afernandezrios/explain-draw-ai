@@ -34,7 +34,8 @@ architecture:
   lib/             geometry, graph depth, tokenizing -- plain functions, no React
   animation/       when things happen (timing.ts) and how they arrive (presets.ts)
       |
-  primitives/      markup: Box, Label, Highlight, Arrow, Node, Connection, CodeBlock
+  primitives/      markup: Box, Label, Highlight, Arrow, Node, Connection,
+                   CodeBlock, Motif
                    scenes: Text, Surface, Icon, Pill, DiagramNode, Edge, Callout
       |
   layout/          Frame (the scene shell) and Stack (row/column/grid/centre)
@@ -104,7 +105,7 @@ element, `<Reveal>` for one in flow.
 
 | Scene | The picture | The data |
 | --- | --- | --- |
-| `TitleScene` | An opening card | title, subtitle, eyebrow, tags, footnote |
+| `TitleScene` | An opening card | title, subtitle, eyebrow, accentLabel, tags, footnote, motif |
 | `PointsScene` | Three to six things, numbered or iconed, one or two columns | `{title, body, icon}[]` |
 | `FlowScene` | A to B to C, left to right or top to bottom, with an optional travelling packet | `steps[]`, `edges[]` labels |
 | `TopologyScene` | Several things on a grid and the wiring between them | `nodes[]` with `col`/`row`/`span`, `edges[]` |
@@ -131,6 +132,7 @@ takes a storyboard and computes a layout; these take the layout you wrote.
 | `Node` | A named box: label, sublabel, icon | `label`, `w`/`h`, `icon`, `accent` |
 | `Connection` | An arrow between two boxes or points | `from`/`to` (rect or point), all of `Arrow`'s |
 | `CodeBlock` | A listing in a window | `code`, `language`, `highlight`, `reveals` |
+| `Motif` | A faint node graph or dot field, behind text | `variant`, `intensity` |
 
 They are additive. `Surface`, `Text`, `DiagramNode` and `Edge` are untouched,
 and each new component reuses what is already there: `Box` is a `Surface` with

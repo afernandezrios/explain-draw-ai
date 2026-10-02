@@ -96,6 +96,17 @@ export function revealStyle(
 }
 
 /**
+ * A window inside a progress that is already 0 to 1, for a caller animating
+ * several things off one beat: a structure whose lines draw and whose nodes
+ * land after them has one signal, not two, and this is how a part of it is
+ * addressed. Eased like everything else, so a sub-window still arrives the way
+ * a beat does.
+ */
+export function easeBetween(progress: number, from: number, to: number): number {
+  return interpolate(progress, [from, to], [0, 1], { ...CLAMP, easing: EASE_OUT });
+}
+
+/**
  * A 0-to-1 ramp over a beat, for anything that is not a style: how much of a
  * path to draw, how far a pulse has travelled, how wide a rule has grown. Pair
  * it with `pathLength={1}` on an SVG path so the dash maths does not need to
