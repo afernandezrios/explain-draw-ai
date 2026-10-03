@@ -30,8 +30,8 @@ export const JPEG_QUALITY = 95;
  * an audio track, and ffmpeg's `-c copy` join passes those tracks through
  * untouched -- which is only lossless while every clip encodes audio the same
  * way. Same codec and bitrate here, same sample rate and channel layout by
- * construction (every clip goes through the same renderer), so a preview clip
- * and a full-render clip stay interchangeable.
+ * construction (every clip goes through the same renderer), so clips from
+ * different renders stay interchangeable.
  */
 export const AUDIO_CODEC = 'aac';
 export const AUDIO_BITRATE = '192k';
@@ -59,13 +59,6 @@ export const STATUS_FILENAME = 'status.json';
 /** The worker's stdout/stderr for the most recent job; truncated at job start. */
 export const RENDER_LOG_FILENAME = 'render.log';
 export const OUTPUT_FILENAME = 'out.mp4';
-export const PREVIEW_FILENAME = 'preview.mp4';
-/**
- * The preview scene renders here first and is then renamed to preview.mp4, so
- * previewing can never clobber a finished clip from a real render -- and a
- * cancelled preview leaves the previous preview.mp4 intact.
- */
-export const PREVIEW_CLIP_FILENAME = 'preview-clip.mp4';
 export const CLIPS_DIRNAME = 'clips';
 /**
  * One WAV per scene, worker-owned, beside `clips/`. Each is synthesized while

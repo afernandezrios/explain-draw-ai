@@ -23,14 +23,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readJsonFile } from './atomic.ts';
 import { LOCK_FILENAME } from './render-config.ts';
-import type { RenderMode } from './render-status.ts';
 
 export type RenderLock = {
   projectId: string;
   projectDir: string;
-  mode: RenderMode;
-  /** The scene a preview is drawing; null for a full render. */
-  sceneIndex: number | null;
   /** The render worker, not the server process that spawned it. */
   pid: number;
   startedAt: number;
@@ -45,8 +41,6 @@ export function isRenderLock(value: unknown): value is RenderLock {
   return (
     typeof candidate.projectId === 'string' &&
     typeof candidate.projectDir === 'string' &&
-    (candidate.mode === 'full' || candidate.mode === 'preview') &&
-    (candidate.sceneIndex === null || typeof candidate.sceneIndex === 'number') &&
     typeof candidate.pid === 'number' &&
     typeof candidate.startedAt === 'number'
   );

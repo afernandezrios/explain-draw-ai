@@ -30,24 +30,14 @@ export async function GET(request: Request, { params }: Params): Promise<Respons
     return invalid;
   }
 
-  // One route for both files: the storyboard's scene render and the joined
-  // video need exactly the same range handling.
   const files = projectFiles(id);
-  const kind = new URL(request.url).searchParams.get('kind');
-  const previewing = kind === 'preview';
-  const file = previewing ? files.preview : files.out;
+  const file = files.out;
 
   let handle: fsp.FileHandle;
   try {
     handle = await fsp.open(file, 'r');
   } catch {
-    return apiError(
-      404,
-      previewing ? 'NO_PREVIEW' : 'NO_VIDEO',
-      previewing
-        ? 'This project has no scene preview yet.'
-        : 'This project has no finished video yet.',
-    );
+    return apiError(404, 'NO_VIDEO', 'This project has no finished video yet.');
   }
 
   try {
@@ -55,7 +45,7 @@ export async function GET(request: Request, { params }: Params): Promise<Respons
     if (size === 0) {
       // An empty file is a render that died mid-write, not a playable video.
       await handle.close();
-      return apiError(404, previewing ? 'NO_PREVIEW' : 'NO_VIDEO', 'The file is empty.');
+      return apiError(404, 'NO_VIDEO', 'The file is empty.');
     }
 
     const header = request.headers.get('range');

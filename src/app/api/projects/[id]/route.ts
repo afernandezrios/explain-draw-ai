@@ -2,20 +2,13 @@
  * GET /api/projects/<id> -- everything the page needs to render itself.
  *
  * One request rather than five: the page loads, polls status separately, and
- * needs the script, the storyboard, the budget verdict and whether a video or
- * preview exists.
+ * needs the script, the storyboard, the budget verdict and whether a video
+ * exists.
  */
 
 import { NextResponse } from 'next/server';
 import { apiError, requireProjectId } from '../../../../lib/http.ts';
-import {
-  hasPreview,
-  hasVideo,
-  readInput,
-  readScenes,
-  readScript,
-  readStatus,
-} from '../../../../lib/pipeline.ts';
+import { hasVideo, readInput, readScenes, readScript, readStatus } from '../../../../lib/pipeline.ts';
 import { activeJob } from '../../../../lib/render-jobs.ts';
 import { checkBudget } from '../../../../lib/schema.ts';
 
@@ -47,7 +40,6 @@ export async function GET(_request: Request, { params }: Params): Promise<NextRe
     budget: scenes.ok ? checkBudget(scenes.scenes) : null,
     status: readStatus(id),
     hasVideo: hasVideo(id),
-    hasPreview: hasPreview(id),
     renderActive: activeJob()?.projectId === id,
   });
 }

@@ -22,14 +22,12 @@ import {
   type ClaimOutcome,
   type RenderLock,
 } from './render-lock.ts';
-import { type JobState, type RenderMode, type RenderStatus, isTerminal } from './render-status.ts';
+import { type JobState, type RenderStatus, isTerminal } from './render-status.ts';
 
-export type { RenderLock, RenderMode };
+export type { RenderLock };
 
 export type StartJobOptions = {
   projectId: string;
-  mode: RenderMode;
-  sceneIndex?: number;
 };
 
 export type StartJobResult =
@@ -90,7 +88,6 @@ function writeFailure(
 ): void {
   writeStatus(projectId, {
     state,
-    mode: current?.mode ?? 'full',
     pid: 0,
     startedAt: current?.startedAt ?? Date.now(),
     updatedAt: Date.now(),
@@ -127,9 +124,8 @@ export function startJob(options: StartJobOptions): StartJobResult {
     return { ok: false, reason: 'busy', activeProjectId: running.projectId };
   }
 
-  const { projectId, mode } = options;
+  const { projectId } = options;
   const files = projectFiles(projectId);
-  const sceneIndex = options.sceneIndex;
   const startedAt = Date.now();
 
   // Assigned synchronously by the spawn below, before any event can fire.
@@ -137,7 +133,6 @@ export function startJob(options: StartJobOptions): StartJobResult {
 
   const handles = scenesToVideo({
     projectId,
-    sceneIndex,
     statusPath: files.status,
     onExit: (code, signal) => {
       releaseLockIfOwnedBy(lockFile(), workerPid);
@@ -173,8 +168,6 @@ export function startJob(options: StartJobOptions): StartJobResult {
     outcome = claimLock(lockFile(), {
       projectId,
       projectDir: files.dir,
-      mode,
-      sceneIndex: sceneIndex ?? null,
       pid: workerPid,
       startedAt,
     });
@@ -197,19 +190,18 @@ export function startJob(options: StartJobOptions): StartJobResult {
   // Claim the UI's view of the job immediately, so a previous job's terminal
   // status cannot flash while the worker boots.
   const stored = readScenes(projectId);
-  const totalScenes = mode === 'preview' ? 1 : stored.ok ? stored.scenes.length : 0;
+  const totalScenes = stored.ok ? stored.scenes.length : 0;
   writeStatus(projectId, {
     state: 'running',
-    mode,
     pid: workerPid,
     startedAt,
     updatedAt: startedAt,
     finishedAt: null,
-    sceneIndex: sceneIndex ?? 0,
+    sceneIndex: 0,
     totalScenes,
     renderedScenes: 0,
     progress: 0,
-    message: mode === 'preview' ? 'Drawing the scene preview...' : 'Starting the render...',
+    message: 'Starting the render...',
   });
 
   return { ok: true, pid: workerPid };

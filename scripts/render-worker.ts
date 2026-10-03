@@ -10,9 +10,9 @@
  * It is also the last line of defence for the three things a render must always
  * honour, whichever way it was started:
  *
- *   - the storyboard is re-validated against the DSL, and a full render whose
- *     total falls outside the accepted window is refused, using the same schema
- *     and the same constants as the app;
+ *   - the storyboard is re-validated against the DSL, and a render whose total
+ *     falls outside the accepted window is refused, using the same schema and
+ *     the same constants as the app;
  *   - the render lock is claimed before any work starts, so a CLI render cannot
  *     run alongside an app render (two Chromium renders on a 7.6 GiB laptop, and
  *     no way to cancel the one the UI cannot see);
@@ -22,7 +22,7 @@
  *
  * Exit codes: 0 success, 1 refusal/failure, 130 cancelled.
  *
- * Run directly with: node scripts/render-worker.ts --project <dir> [--scene n]
+ * Run directly with: node scripts/render-worker.ts --project <dir>
  * (Node runs TypeScript here via type stripping, which is why the shared schema,
  * lock and constants are imported as real .ts modules rather than duplicated.)
  */
@@ -55,8 +55,6 @@ import {
   NARRATION_OVERRUN_TOLERANCE_SECONDS,
   OUTPUT_FILENAME,
   PIXEL_FORMAT,
-  PREVIEW_CLIP_FILENAME,
-  PREVIEW_FILENAME,
   SCENES_FILENAME,
   STATUS_FILENAME,
   VIDEO_CODEC,
@@ -66,7 +64,7 @@ import {
   secondsToFrames,
 } from '../src/lib/render-config.ts';
 import { claimLock, releaseLockIfOwnedBy, type RenderLock } from '../src/lib/render-lock.ts';
-import type { RenderMode, RenderStatus } from '../src/lib/render-status.ts';
+import type { RenderStatus } from '../src/lib/render-status.ts';
 import {
   ScenesShapeSchema,
   checkBudget,
@@ -93,15 +91,12 @@ class CancelledError extends Error {}
 type WorkerArgs = {
   projectDir: string;
   statusPath: string;
-  /** Scene to render for a preview; absent means render the whole video. */
-  scene?: number;
 };
 
 const USAGE = `Usage: node scripts/render-worker.ts --project <dir> [options]
 
   --project <dir>   project folder holding scenes.json (required)
   --status <file>   where to write render status (default <dir>/${STATUS_FILENAME})
-  --scene <n>       render only scene n (0-based) as a preview
 `;
 
 function requireValue(argv: string[], index: number, flag: string): string {
@@ -112,18 +107,9 @@ function requireValue(argv: string[], index: number, flag: string): string {
   return value;
 }
 
-/** Rejects anything that is not a plain non-negative integer. */
-function parseSceneArg(value: string): number {
-  if (!/^\d+$/.test(value)) {
-    throw new UsageError(`--scene must be a non-negative integer, got "${value}"`);
-  }
-  return Number.parseInt(value, 10);
-}
-
 function parseArgs(argv: string[]): WorkerArgs {
   let projectDir: string | undefined;
   let statusPath: string | undefined;
-  let scene: number | undefined;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -131,8 +117,6 @@ function parseArgs(argv: string[]): WorkerArgs {
       projectDir = requireValue(argv, ++i, '--project');
     } else if (arg === '--status') {
       statusPath = requireValue(argv, ++i, '--status');
-    } else if (arg === '--scene') {
-      scene = parseSceneArg(requireValue(argv, ++i, '--scene'));
     } else if (arg === '--help' || arg === '-h') {
       process.stdout.write(USAGE);
       process.exit(0);
@@ -147,7 +131,6 @@ function parseArgs(argv: string[]): WorkerArgs {
   return {
     projectDir: path.resolve(projectDir),
     statusPath: path.resolve(statusPath ?? path.join(projectDir, STATUS_FILENAME)),
-    scene,
   };
 }
 
@@ -157,11 +140,10 @@ let status: RenderStatus;
 let statusPath = '';
 let lastStatusWrite = 0;
 
-function initStatus(pathToStatus: string, mode: RenderMode, totalScenes: number): void {
+function initStatus(pathToStatus: string, totalScenes: number): void {
   statusPath = pathToStatus;
   status = {
     state: 'running',
-    mode,
     pid: process.pid,
     startedAt: Date.now(),
     updatedAt: Date.now(),
@@ -170,7 +152,7 @@ function initStatus(pathToStatus: string, mode: RenderMode, totalScenes: number)
     totalScenes,
     renderedScenes: 0,
     progress: 0,
-    message: mode === 'preview' ? 'Drawing the scene preview...' : 'Preparing the render...',
+    message: 'Preparing the render...',
   };
   writeStatus({}, true);
 }
@@ -578,10 +560,10 @@ type NarrationJob = {
  * needs it: the bundle for the first scene, the previous scene's render for the
  * rest.
  *
- * Unconditional by design -- a full render narrates every scene, a preview only
- * the scene it draws, and neither reuses a WAV already on disk -- and never more
- * than one voice at a time. Each WAV only has to exist before its own scene
- * draws, so each scene's voice is spoken while the previous one renders.
+ * Unconditional by design -- a render narrates every scene, and never reuses a
+ * WAV already on disk -- and never more than one voice at a time. Each WAV only
+ * has to exist before its own scene draws, so each scene's voice is spoken while
+ * the previous one renders.
  *
  * The promise gets a no-op catch the moment it is created: the caller awaits it
  * only after a bundle or a render, and a rejection left unhandled for that long
@@ -606,7 +588,7 @@ async function renderScene(options: {
   scene: Scene;
   index: number;
   totalScenes: number;
-  /** Scenes already finished when this one starts. A preview job has none. */
+  /** Scenes already finished when this one starts. */
   completedScenes: number;
   /** This scene's WAV as measured; the clip is rendered for it, not the storyboard. */
   narrationSeconds: number;
@@ -653,8 +635,8 @@ async function renderScene(options: {
     logLevel: 'error',
   });
 
-  // The scene number is the storyboard's, the total is the job's: a preview of
-  // scene 4 of a 39-scene storyboard is "scene 4", not "scene 4 of 1".
+  // The scene number is the storyboard's position; a one-scene storyboard reads
+  // "scene 1" rather than "scene 1 of 1".
   writeStatus(
     {
       sceneIndex: index,
@@ -703,8 +685,8 @@ async function renderScene(options: {
       onProgress: ({ progress: sceneProgress }) => {
         writeStatus({
           sceneIndex: index,
-          // Counted in the job's own terms: a preview of scene 4 is still the
-          // first (and only) scene of its job, not "three already done".
+          // Counted in the job's own terms: the scenes committed to disk so far,
+          // not a fraction derived from this scene's progress.
           renderedScenes: completedScenes,
           progress: jobProgress(sceneProgress),
         });
@@ -723,9 +705,8 @@ async function renderScene(options: {
 }
 
 /**
- * Reads and checks the storyboard. Validation always applies; the duration
- * window applies to a full render, while a single-scene preview is allowed for
- * a storyboard that is still being brought inside the window.
+ * Reads and checks the storyboard: parse, then validate, then the duration
+ * window -- the same gates the app applies on the way in.
  */
 function loadScenes(args: WorkerArgs): Scene[] {
   const scenesPath = path.join(args.projectDir, SCENES_FILENAME);
@@ -755,17 +736,9 @@ function loadScenes(args: WorkerArgs): Scene[] {
     throw new Error('refusing to render: scenes.json holds no scenes');
   }
 
-  if (args.scene !== undefined && (args.scene < 0 || args.scene >= scenes.length)) {
-    throw new Error(
-      `refusing to render: --scene ${args.scene} is outside scenes.json (0-${scenes.length - 1})`,
-    );
-  }
-
-  if (args.scene === undefined) {
-    const budget = checkBudget(scenes);
-    if (!budget.ok) {
-      throw new Error(`refusing to render: ${budget.message}`);
-    }
+  const budget = checkBudget(scenes);
+  if (!budget.ok) {
+    throw new Error(`refusing to render: ${budget.message}`);
   }
 
   return scenes;
@@ -787,8 +760,6 @@ function takeRenderLock(args: WorkerArgs): 'held' | null {
   const lock: RenderLock = {
     projectId: path.basename(args.projectDir),
     projectDir: args.projectDir,
-    mode: args.scene === undefined ? 'full' : 'preview',
-    sceneIndex: args.scene ?? null,
     pid: process.pid,
     startedAt: Date.now(),
   };
@@ -830,14 +801,10 @@ async function main(argv: string[]): Promise<number> {
     return EXIT_FAILED;
   }
 
-  const previewing = args.scene !== undefined;
-  const totalScenes = previewing ? 1 : scenes.length;
-  initStatus(args.statusPath, previewing ? 'preview' : 'full', totalScenes);
+  initStatus(args.statusPath, scenes.length);
 
   try {
-    process.stdout.write(
-      `[render] ${previewing ? `scene ${args.scene} preview` : `${scenes.length} scenes`} from ${args.projectDir}\n`,
-    );
+    process.stdout.write(`[render] ${scenes.length} scenes from ${args.projectDir}\n`);
 
     await ensureBrowser({ logLevel: 'error' });
     abortIfCancelled('browser start-up');
@@ -850,7 +817,7 @@ async function main(argv: string[]): Promise<number> {
     // a rebuilt storyboard is worse than none).
     const narrationDir = path.join(args.projectDir, NARRATION_DIRNAME);
     fs.mkdirSync(narrationDir, { recursive: true });
-    const indices = previewing ? [args.scene as number] : scenes.map((_, index) => index);
+    const indices = scenes.map((_, index) => index);
     writeStatus({ message: 'Preparing narration...' }, true);
     process.stdout.write(
       `[render] narrating ${indices.length} scene${indices.length === 1 ? '' : 's'}, overlapped with rendering\n`,
@@ -886,50 +853,6 @@ async function main(argv: string[]): Promise<number> {
         );
       }
     };
-
-    if (previewing) {
-      const sceneIndex = args.scene as number;
-      // Render to a file of its own, then move it into place. Rendering straight
-      // over preview.mp4 would be the file the player is already serving, and
-      // rendering over the scene's own clip would destroy a finished full-render
-      // clip.
-      const clipPath = path.join(args.projectDir, PREVIEW_CLIP_FILENAME);
-      const previewPath = path.join(args.projectDir, PREVIEW_FILENAME);
-      // Written only while the voice is genuinely still being spoken: a WAV
-      // already in place would leave this message up until the render replaces
-      // it.
-      if (!firstJob.isDone()) {
-        writeStatus({ sceneIndex, message: `Narrating scene ${sceneIndex + 1}...`, progress: 0 }, true);
-      }
-      const narrationSeconds = await firstJob.promise;
-      abortIfCancelled('narration synthesis');
-      publishNarration(sceneIndex);
-      try {
-        await renderScene({
-          serveUrl,
-          scene: scenes[sceneIndex],
-          index: sceneIndex,
-          totalScenes: 1,
-          completedScenes: 0,
-          narrationSeconds,
-          outputPath: clipPath,
-          // A preview is its own job of one scene, so its progress is the
-          // scene's own: an index over one total would read 100% immediately.
-          jobProgress: (sceneProgress) => sceneProgress,
-        });
-        // Checked while it is still preview-clip.mp4: a preview clip is a clip
-        // like any other and must carry its narration, and refusing after the
-        // rename would have destroyed the previous, good preview.mp4 on the way
-        // to reporting the problem.
-        await requireAudibleTrack(clipPath, 'the preview clip');
-        fs.renameSync(clipPath, previewPath);
-        writeStatus({ renderedScenes: 1 }, true);
-      } finally {
-        // Whether it was cancelled, failed or already moved into place.
-        fs.rmSync(clipPath, { force: true });
-      }
-      return finish('done', 'Preview ready.');
-    }
 
     const clipsDir = path.join(args.projectDir, CLIPS_DIRNAME);
     fs.mkdirSync(clipsDir, { recursive: true });

@@ -3,14 +3,13 @@
 /**
  * The whole app, on one page.
  *
- * One shell, four artifact panes, one banner zone and one render footer —
+ * One shell, three artifact panes, one banner zone and one render footer —
  * toolbar on top, sidebar on the left, one pane visible at a time. The panes run
- * in the order the pipeline does: paste, edit the script, look at the storyboard,
- * render. While a job runs, the controls that would edit what the worker holds
- * are disabled, because there is exactly one render at a time and the worker has
- * its own copy of the scenes. Input's Generate is not one of them: it creates a
- * new project folder and never touches the open project, so a running render
- * never refuses it.
+ * in the order the pipeline does: paste, edit the script, render. While a job
+ * runs, the controls that would edit what the worker holds are disabled, because
+ * there is exactly one render at a time and the worker has its own copy of the
+ * scenes. Input's Generate is not one of them: it creates a new project folder
+ * and never touches the open project, so a running render never refuses it.
  *
  * The page never imports the schema module. It only takes types from it, so zod
  * stays out of the browser bundle, and every budget string it prints was
@@ -38,7 +37,6 @@ type ProjectData = {
   budget: BudgetCheck | null;
   status: RenderStatus | null;
   hasVideo: boolean;
-  hasPreview: boolean;
   renderActive: boolean;
 };
 
@@ -46,21 +44,19 @@ type StatusData = {
   status: RenderStatus | null;
   renderActive: boolean;
   hasVideo: boolean;
-  hasPreview: boolean;
   budget: BudgetCheck | null;
 };
 
-/** The four artifact panes. Every one of them is always reachable. */
-type Pane = 'input' | 'script' | 'board' | 'video';
+/** The three artifact panes. Every one of them is always reachable. */
+type Pane = 'input' | 'script' | 'video';
 
 const PANE_LABELS: Record<Pane, string> = {
   input: 'Input',
   script: 'Script',
-  board: 'Board',
   video: 'Video',
 };
 
-const PANES: readonly Pane[] = ['input', 'script', 'board', 'video'];
+const PANES: readonly Pane[] = ['input', 'script', 'video'];
 
 /** A message in the banner zone: what it says, where it came from, and how to hide it. */
 type Message = {
@@ -169,24 +165,18 @@ function wordCount(text: string): number {
 function lastOutcomeLine(status: RenderStatus, now: number): string {
   const at = status.finishedAt ?? status.updatedAt;
   const age = formatAge(Math.max(0, now - at));
-  const what = status.mode === 'preview' ? 'scene preview' : 'render';
   if (status.state === 'done') {
-    return `Last ${what} finished ${age}`;
+    return `Last render finished ${age}`;
   }
   if (status.state === 'cancelled') {
-    return `Last ${what} cancelled ${age}`;
+    return `Last render cancelled ${age}`;
   }
   if (status.state === 'failed') {
-    // A preview's `totalScenes` is 1 while its `sceneIndex` is the storyboard
-    // index, so clamping to the total would report every failing preview as
-    // scene 1. Only a full render's index needs the clamp.
     const scene =
-      status.mode === 'preview'
-        ? ` · scene ${status.sceneIndex + 1}`
-        : status.totalScenes > 0
-          ? ` · scene ${Math.min(status.sceneIndex + 1, status.totalScenes)}`
-          : '';
-    return `Last ${what} failed ${age}${scene}`;
+      status.totalScenes > 0
+        ? ` · scene ${Math.min(status.sceneIndex + 1, status.totalScenes)}`
+        : '';
+    return `Last render failed ${age}${scene}`;
   }
   return '';
 }
@@ -226,14 +216,6 @@ function PaneIcon({ pane }: { pane: Pane }) {
     return (
       <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
         <path d="M4.5 5.5h7M4.5 9.5h11M4.5 13.5h11M4.5 17h7" />
-      </svg>
-    );
-  }
-  if (pane === 'board') {
-    return (
-      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
-        <rect x="3.4" y="4.2" width="13.2" height="11.6" rx="1.6" />
-        <path d="M3.4 8.1h13.2M8.2 4.2v11.6" />
       </svg>
     );
   }
@@ -296,34 +278,6 @@ function RenderLogTail({ lines }: { lines: string[] | null }) {
   );
 }
 
-/**
- * The Board readout's per-kind clause, where a shape count used to stand.
- *
- * Types only: the switch narrows the scene union on its `kind` field, so the
- * page still carries no zod into the browser bundle.
- */
-function sceneReadout(scene: Scene): string {
-  switch (scene.kind) {
-    case 'title':
-      return 'title card';
-    case 'points':
-      return `${scene.items.length} points`;
-    case 'flow':
-      return `${scene.stages.length} stages`;
-    case 'topology':
-      return `${scene.nodes.length} nodes`;
-    case 'diagram':
-      return `${scene.nodes.length} boxes, ${scene.edges.length} arrows`;
-    case 'sequence':
-      return `${scene.steps.length} steps`;
-    case 'code':
-      // What the editor draws: the block trims blank lines before writing.
-      return `${scene.code.split('\n').filter((line) => line.trim() !== '').length} lines`;
-    case 'concept':
-      return `${scene.terms.length} terms`;
-  }
-}
-
 /** A readout line: values in ink at 600, separated by the mid-dot. */
 function Readout({ parts }: { parts: ReactNode[] }) {
   return (
@@ -351,8 +305,6 @@ export default function HomePage() {
   const [status, setStatus] = useState<RenderStatus | null>(null);
   const [renderActive, setRenderActive] = useState(false);
   const [hasVideo, setHasVideo] = useState(false);
-  const [hasPreview, setHasPreview] = useState(false);
-  const [selected, setSelected] = useState(0);
 
   /** Which pane is in front. Free navigation: every pane is always reachable. */
   const [pane, setPane] = useState<Pane>('input');
@@ -363,8 +315,6 @@ export default function HomePage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeOrigin, setNoticeOrigin] = useState<Pane>('input');
   const [noticeAt, setNoticeAt] = useState(0);
-  /** The pane whose control started the current (or last) job. */
-  const [jobOrigin, setJobOrigin] = useState<Pane>('video');
   /** Messages the reader has dismissed, by key. Cleared when the project changes. */
   const [dismissed, setDismissed] = useState<string[]>([]);
   /** The footer's resting line, dismissed. */
@@ -383,8 +333,6 @@ export default function HomePage() {
 
   /** Bumped after a job ends so the players reload the new file. */
   const [mediaNonce, setMediaNonce] = useState(0);
-  /** Bumped when the storyboard changes so the thumbnails refetch. */
-  const [sceneNonce, setSceneNonce] = useState(0);
 
   const jobStartedAtRef = useRef<number | null>(null);
   /** Which project the panel is showing, so a reload of it keeps dismissals. */
@@ -429,8 +377,6 @@ export default function HomePage() {
     setStatus(data.status);
     setRenderActive(data.renderActive);
     setHasVideo(data.hasVideo);
-    setHasPreview(data.hasPreview);
-    setSelected((current) => Math.min(current, Math.max(0, data.scenes.length - 1)));
     window.history.replaceState(null, '', `/?project=${data.projectId}`);
   }, []);
 
@@ -516,11 +462,8 @@ export default function HomePage() {
       setStatus(null);
       setRenderActive(false);
       setHasVideo(false);
-      setHasPreview(false);
       setWorkerGone(null);
-      setSelected(0);
       setMediaNonce((n) => n + 1);
-      setSceneNonce((n) => n + 1);
       setJobDismissed(false);
       applyProject({
         ...created,
@@ -528,7 +471,6 @@ export default function HomePage() {
         sceneErrors: [],
         status: null,
         hasVideo: false,
-        hasPreview: false,
         renderActive: false,
       });
       showNotice(
@@ -566,8 +508,6 @@ export default function HomePage() {
     setStatus(null);
     setRenderActive(false);
     setHasVideo(false);
-    setHasPreview(false);
-    setSelected(0);
     setWorkerGone(null);
     setRenderLog(null);
     setError(null);
@@ -640,11 +580,9 @@ export default function HomePage() {
       setScenes(rebuilt.scenes);
       setSceneErrors([]);
       setBudget(rebuilt.budget);
-      setSelected(0);
-      setSceneNonce((n) => n + 1);
       showNotice(
         `Rebuilt the storyboard: ${rebuilt.scenes.length} scenes${metaSuffix(rebuilt.meta)}.`,
-        'board',
+        'script',
       );
     } catch (thrown) {
       if (epoch !== epochRef.current) {
@@ -661,64 +599,57 @@ export default function HomePage() {
 
   /* ─────────────────────────────── render ─────────────────────────── */
 
-  const startRender = useCallback(
-    async (sceneIndex?: number) => {
-      if (!projectId) {
+  const startRender = useCallback(async () => {
+    if (!projectId) {
+      return;
+    }
+    setStarting(true);
+    setError(null);
+    setNotice(null);
+    setWorkerGone(null);
+    setCancelling(false);
+    setRenderLog(null);
+    setJobDismissed(false);
+    // The job we are about to start; anything older is a previous job's
+    // outcome and must not be mistaken for this one's.
+    jobStartedAtRef.current = Date.now();
+    const epoch = epochRef.current;
+    try {
+      const { ok, data } = await sendJson(`/api/projects/${projectId}/render`, 'POST');
+      if (epoch !== epochRef.current) {
+        // The project was left while the worker was being started: its status
+        // is not this pane's to show.
         return;
       }
-      setStarting(true);
-      setError(null);
-      setNotice(null);
-      setWorkerGone(null);
-      setCancelling(false);
-      setRenderLog(null);
-      setJobDismissed(false);
-      // Which pane's control started this job, so a failure can name its origin.
-      setJobOrigin(sceneIndex === undefined ? 'video' : 'board');
-      // The job we are about to start; anything older is a previous job's
-      // outcome and must not be mistaken for this one's.
-      jobStartedAtRef.current = Date.now();
-      const epoch = epochRef.current;
-      try {
-        const body = sceneIndex === undefined ? {} : { sceneIndex };
-        const { ok, data } = await sendJson(`/api/projects/${projectId}/render`, 'POST', body);
-        if (epoch !== epochRef.current) {
-          // The project was left while the worker was being started: its status
-          // is not this pane's to show.
-          return;
-        }
-        if (!ok) {
-          showError(readError(data), sceneIndex === undefined ? 'video' : 'board');
-          return;
-        }
-        setRenderActive(true);
-        setStatus({
-          state: 'running',
-          mode: sceneIndex === undefined ? 'full' : 'preview',
-          pid: 0,
-          startedAt: jobStartedAtRef.current,
-          updatedAt: jobStartedAtRef.current,
-          finishedAt: null,
-          sceneIndex: sceneIndex ?? 0,
-          totalScenes: sceneIndex === undefined ? scenes.length : 1,
-          renderedScenes: 0,
-          progress: 0,
-          message: 'Starting...',
-        });
-      } catch (thrown) {
-        if (epoch !== epochRef.current) {
-          return;
-        }
-        showError(
-          { error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' },
-          sceneIndex === undefined ? 'video' : 'board',
-        );
-      } finally {
-        setStarting(false);
+      if (!ok) {
+        showError(readError(data), 'video');
+        return;
       }
-    },
-    [projectId, scenes.length, showError],
-  );
+      setRenderActive(true);
+      setStatus({
+        state: 'running',
+        pid: 0,
+        startedAt: jobStartedAtRef.current,
+        updatedAt: jobStartedAtRef.current,
+        finishedAt: null,
+        sceneIndex: 0,
+        totalScenes: scenes.length,
+        renderedScenes: 0,
+        progress: 0,
+        message: 'Starting...',
+      });
+    } catch (thrown) {
+      if (epoch !== epochRef.current) {
+        return;
+      }
+      showError(
+        { error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' },
+        'video',
+      );
+    } finally {
+      setStarting(false);
+    }
+  }, [projectId, scenes.length, showError]);
 
   const cancelRender = useCallback(async () => {
     if (!projectId) {
@@ -728,7 +659,7 @@ export default function HomePage() {
     try {
       const { ok, data } = await sendJson(`/api/projects/${projectId}/cancel`, 'POST');
       if (!ok) {
-        showError(readError(data), jobOrigin);
+        showError(readError(data), 'video');
       }
       // Only a cancel that actually signalled a worker keeps the button held: a
       // refused or empty answer means the render is still running (or already
@@ -742,11 +673,11 @@ export default function HomePage() {
       // for it, or a cancel that never reached the server is unrecoverable.
       showError(
         { error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' },
-        jobOrigin,
+        'video',
       );
       setCancelling(false);
     }
-  }, [jobOrigin, projectId, showError]);
+  }, [projectId, showError]);
 
   // Poll while a job is running. Stops on a terminal status, or when the worker
   // is gone and nothing is left that could update the status.
@@ -773,7 +704,6 @@ export default function HomePage() {
       const next = snapshot.status;
       setRenderActive(snapshot.renderActive);
       setHasVideo(snapshot.hasVideo);
-      setHasPreview(snapshot.hasPreview);
       if (snapshot.budget) {
         setBudget(snapshot.budget);
       }
@@ -837,8 +767,6 @@ export default function HomePage() {
   /* ────────────────────────────── derived ─────────────────────────── */
 
   const running = workerGone === null && (renderActive || status?.state === 'running');
-  const renderingMode = status?.mode === 'preview' ? 'preview' : 'full';
-  const currentScene = scenes[selected];
   const runningScene = status ? scenes[status.sceneIndex] : undefined;
   const inputTooLong = input.length > MAX_INPUT_CHARS;
   const budgetBlocksRender = budget !== null && !budget.ok;
@@ -874,7 +802,6 @@ export default function HomePage() {
   const navStates: Record<Pane, ReactNode | null> = {
     input: hasProject && input.length > 0 ? `${input.length.toLocaleString()} ch` : null,
     script: hasProject && paragraphs > 0 ? `${paragraphs} ¶` : null,
-    board: hasProject && scenes.length > 0 ? String(scenes.length) : null,
     video: hasProject && hasVideo ? <CheckIcon /> : null,
   };
 
@@ -911,7 +838,7 @@ export default function HomePage() {
       key: `budget:${budget.label}`,
       severity: 'failure',
       body: `${budget.label} A full render is refused until the storyboard is inside the window.`,
-      origin: 'board',
+      origin: 'video',
     });
   }
   if (sceneErrors.length > 0) {
@@ -920,7 +847,7 @@ export default function HomePage() {
       severity: 'failure',
       body: 'The stored storyboard does not match the scene format, so nothing can be rendered.',
       details: sceneErrors,
-      origin: 'board',
+      origin: 'video',
     });
   }
   if (workerGone !== null) {
@@ -935,10 +862,8 @@ export default function HomePage() {
     messages.push({
       key: `renderFailed:${status.startedAt}`,
       severity: 'failure',
-      body: `${renderingMode === 'preview' ? 'Scene preview' : 'Render'} failed: ${
-        status.message ?? 'see the terminal for details'
-      }`,
-      origin: jobOrigin,
+      body: `Render failed: ${status.message ?? 'see the terminal for details'}`,
+      origin: 'video',
       at: status.finishedAt ?? status.updatedAt,
     });
   }
@@ -988,7 +913,7 @@ export default function HomePage() {
             <div
               className="progress-bar"
               role="progressbar"
-              aria-label={renderingMode === 'preview' ? 'Scene preview progress' : 'Render progress'}
+              aria-label="Render progress"
               aria-valuemin={0}
               aria-valuemax={100}
               aria-valuenow={percent}
@@ -1060,8 +985,8 @@ export default function HomePage() {
                   New project
                 </button>
                 <p className="control-note">
-                  <b>Leaves this project behind.</b> Nothing is deleted — the script, board and video
-                  stay in the project folder — but the pane starts again from an empty input.
+                  <b>Leaves this project behind.</b> Nothing is deleted — the script and video stay
+                  in the project folder — but the pane starts again from an empty input.
                 </p>
               </div>
             </div>
@@ -1085,8 +1010,8 @@ export default function HomePage() {
               </span>
             </div>
             <p className="empty-note">
-              <b>First run.</b> Generating creates the project. Script, Board and Video are already
-              listed in the sidebar; they stay empty until they are produced.
+              <b>First run.</b> Generating creates the project. Script and Video are already listed
+              in the sidebar; they stay empty until they are produced.
             </p>
           </>
         )}
@@ -1202,149 +1127,6 @@ export default function HomePage() {
           <div className="ghost-note">
             <p>
               <b>Nothing written yet.</b> The script comes from the topic you paste in Input.
-            </p>
-            <button className="button sm" onClick={() => setPane('input')}>
-              Go to Input
-              <ChevronIcon direction="right" />
-            </button>
-          </div>
-        </div>
-      </>
-    );
-
-  const boardPane =
-    hasProject && scenes.length > 0 ? (
-      <>
-        <div className="pane-head">
-          <h1 className="pane-title">Board</h1>
-          <span className="pane-subtitle">{scenes.length} scenes</span>
-        </div>
-        <div className="scene-strip-wrap">
-          <div className="scene-strip">
-            {scenes.map((scene, index) => (
-              <button
-                key={`${index}-${scene.title}`}
-                className={`scene-thumb${index === selected ? ' is-active' : ''}`}
-                onClick={() => setSelected(index)}
-                aria-current={index === selected ? 'true' : undefined}
-              >
-                <img
-                  className="scene-thumb-art"
-                  src={`/api/projects/${projectId}/preview?scene=${index}&v=${sceneNonce}&w=320`}
-                  alt={`Scene ${index + 1}: ${scene.title}`}
-                  loading="lazy"
-                />
-                <span className="scene-thumb-caption">
-                  <b>
-                    {index + 1}. {scene.title}
-                  </b>
-                  <span>{scene.durationSeconds}s</span>
-                </span>
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {currentScene && (
-          <div className="board-mat">
-            <img
-              className="board-artwork"
-              src={`/api/projects/${projectId}/preview?scene=${selected}&v=${sceneNonce}`}
-              alt={`Scene ${selected + 1}: ${currentScene.title}`}
-            />
-          </div>
-        )}
-
-        {hasPreview && (
-          <div className="board-mat">
-            <video
-              key={`preview-${mediaNonce}`}
-              src={`/api/projects/${projectId}/video?kind=preview&v=${mediaNonce}`}
-              controls
-              playsInline
-              aria-label={`Scene ${selected + 1} preview`}
-            />
-          </div>
-        )}
-
-        <div className="pane-foot">
-          {currentScene && (
-            <Readout
-              parts={[
-                `Scene ${selected + 1} of ${scenes.length}`,
-                currentScene.title,
-                `${currentScene.durationSeconds}s`,
-                sceneReadout(currentScene),
-              ]}
-            />
-          )}
-          <div className="pane-foot-controls">
-            <button
-              className="button"
-              onClick={() => setSelected((current) => Math.max(0, current - 1))}
-              disabled={selected === 0}
-            >
-              <ChevronIcon direction="left" />
-              Previous
-            </button>
-            <button
-              className="button"
-              onClick={() => setSelected((current) => Math.min(scenes.length - 1, current + 1))}
-              disabled={selected === scenes.length - 1}
-            >
-              Next
-              <ChevronIcon direction="right" />
-            </button>
-            <button
-              className="button primary lg"
-              onClick={() => void startRender(selected)}
-              disabled={running || starting}
-            >
-              Render this scene
-            </button>
-          </div>
-          <p className="control-note">
-            <b>Render this scene</b> is a full render of scene {selected + 1} — it takes the render
-            lock, synthesizes that scene's narration, and is unavailable while a render runs.
-          </p>
-        </div>
-      </>
-    ) : (
-      <>
-        <div className="pane-head">
-          <h1 className="pane-title">Board</h1>
-        </div>
-        <div className="scene-strip-wrap">
-          <div className="scene-strip">
-            {[0, 1, 2, 3].map((index) => (
-              <div className="ghost-thumb" key={index} aria-hidden="true">
-                <span className="ghost-thumb-art" />
-                <span className="ghost-thumb-caption">
-                  <span className="ghost-bar" />
-                  <span className="ghost-bar is-short" />
-                </span>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="ghost-mat" aria-hidden="true">
-          <svg className="ghost-artwork" viewBox="0 0 1600 900">
-            <g>
-              <path d="M 150 300 C 300 294, 420 302, 540 298 C 546 380, 544 440, 540 486 C 420 492, 300 488, 150 490 C 144 420, 146 340, 150 300" />
-              <path d="M 200 372 C 280 368, 350 374, 430 370" />
-              <path d="M 620 380 C 720 374, 820 382, 930 378" />
-              <path d="M 900 344 L 936 380 L 898 412" />
-              <path d="M 990 290 C 1080 284, 1200 292, 1330 288 C 1336 380, 1334 450, 1330 512 C 1200 518, 1080 514, 990 516 C 984 430, 986 340, 990 290" />
-              <path d="M 1400 400 C 1400 366, 1424 352, 1448 352 C 1472 352, 1496 366, 1496 400 C 1496 434, 1472 448, 1448 448 C 1424 448, 1400 434, 1400 400 Z" />
-              <path d="M 1448 448 L 1448 520 M 1412 572 L 1448 520 L 1484 572 M 1448 486 L 1398 512 M 1448 486 L 1498 512" />
-              <path d="M 200 700 C 300 694, 380 702, 470 698" />
-            </g>
-          </svg>
-        </div>
-        <div className="pane-foot">
-          <div className="ghost-note">
-            <p>
-              <b>Nothing drawn yet.</b> The storyboard comes from the script.
             </p>
             <button className="button sm" onClick={() => setPane('input')}>
               Go to Input
@@ -1531,7 +1313,6 @@ export default function HomePage() {
 
             {pane === 'input' && inputPane}
             {pane === 'script' && scriptPane}
-            {pane === 'board' && boardPane}
             {pane === 'video' && videoPane}
           </div>
         </main>

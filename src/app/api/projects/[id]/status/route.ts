@@ -10,7 +10,7 @@
 
 import { NextResponse } from 'next/server';
 import { requireProjectId } from '../../../../../lib/http.ts';
-import { hasPreview, hasVideo, readScenes, readStatus } from '../../../../../lib/pipeline.ts';
+import { hasVideo, readScenes, readStatus } from '../../../../../lib/pipeline.ts';
 import { activeJob } from '../../../../../lib/render-jobs.ts';
 import { checkBudget } from '../../../../../lib/schema.ts';
 
@@ -32,7 +32,6 @@ export async function GET(_request: Request, { params }: Params): Promise<NextRe
     status: readStatus(id),
     renderActive: activeJob()?.projectId === id,
     hasVideo: hasVideo(id),
-    hasPreview: hasPreview(id),
     budget: scenes.ok ? checkBudget(scenes.scenes) : null,
   });
 }

@@ -1,10 +1,9 @@
 /**
- * POST /api/projects/<id>/render -- start rendering.
+ * POST /api/projects/<id>/render -- start rendering the whole video.
  *
- * With no body, renders the whole video and refuses unless the storyboard total
- * is inside the 270-330s window. With `{ "sceneIndex": n }` it renders that one
- * scene as a preview, which is deliberately exempt from the window: previewing a
- * scene is how you look at a storyboard that is still being fixed.
+ * Takes no body. The storyboard must total inside the 270-330s window; the same
+ * check runs again in the worker, which is what makes `npm run render` by hand
+ * behave the same as this route.
  */
 
 import { NextResponse } from 'next/server';
@@ -18,25 +17,6 @@ export const dynamic = 'force-dynamic';
 
 type Params = { params: Promise<{ id: string }> };
 
-type SceneIndexResult =
-  | { ok: true; sceneIndex?: number }
-  | { ok: false; message: string };
-
-/**
- * `sceneIndex` is optional, but when present it must be a non-negative integer.
- * Coercing "1" or 1.5 instead would silently render a scene nobody asked for.
- */
-function parseSceneIndex(body: unknown): SceneIndexResult {
-  const raw = (body as { sceneIndex?: unknown } | null)?.sceneIndex;
-  if (raw === undefined || raw === null) {
-    return { ok: true };
-  }
-  if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0) {
-    return { ok: false, message: '"sceneIndex" must be a non-negative integer when it is present.' };
-  }
-  return { ok: true, sceneIndex: raw };
-}
-
 export async function POST(request: Request, { params }: Params): Promise<NextResponse> {
   const { id } = await params;
   const invalid = requireProjectId(id);
@@ -44,26 +24,12 @@ export async function POST(request: Request, { params }: Params): Promise<NextRe
     return invalid;
   }
 
-  // An empty body is the normal case (render everything), so a parse failure is
-  // only fatal if something was actually sent.
+  // A non-empty body is refused rather than ignored: a stale caller still
+  // posting the old per-scene preview's `{"sceneIndex": 0}` must not have its
+  // typo silently start a full render.
   const text = await request.text();
-  let body: unknown = null;
   if (text.trim() !== '') {
-    try {
-      body = JSON.parse(text);
-    } catch {
-      return apiError(400, 'BAD_JSON', 'The request body is not valid JSON.');
-    }
-    // JSON that is not an object cannot carry a sceneIndex, and reading one as
-    // "render everything" would turn a caller's typo into a full render.
-    if (typeof body !== 'object' || body === null || Array.isArray(body)) {
-      return apiError(400, 'BAD_JSON', 'The request body must be a JSON object, like {"sceneIndex": 0}.');
-    }
-  }
-
-  const parsed = parseSceneIndex(body);
-  if (!parsed.ok) {
-    return apiError(400, 'BAD_SCENE_INDEX', parsed.message);
+    return apiError(400, 'BAD_JSON', 'POST /render takes no body.');
   }
 
   // A project that is not there is a 404, not a storyboard problem: the same
@@ -86,30 +52,12 @@ export async function POST(request: Request, { params }: Params): Promise<NextRe
     return apiError(422, 'NO_SCENES', 'This project has no scenes to render.');
   }
 
-  const sceneIndex = parsed.sceneIndex;
-  const previewing = sceneIndex !== undefined;
-  if (sceneIndex !== undefined && sceneIndex >= scenes.scenes.length) {
-    return apiError(
-      400,
-      'SCENE_OUT_OF_RANGE',
-      `Scene ${sceneIndex} does not exist; this storyboard has ${scenes.scenes.length}.`,
-    );
+  const budget = checkBudget(scenes.scenes);
+  if (!budget.ok) {
+    return apiError(409, 'BUDGET', budget.message);
   }
 
-  if (!previewing) {
-    const budget = checkBudget(scenes.scenes);
-    if (!budget.ok) {
-      // The same check runs again in the worker, which is what makes `npm run
-      // render` by hand behave the same as this route.
-      return apiError(409, 'BUDGET', budget.message);
-    }
-  }
-
-  const started = startJob({
-    projectId: id,
-    mode: previewing ? 'preview' : 'full',
-    sceneIndex,
-  });
+  const started = startJob({ projectId: id });
   if (!started.ok) {
     if (started.reason === 'lock-error') {
       // No lock could be written, so the worker we spawned was stopped instead
@@ -125,5 +73,5 @@ export async function POST(request: Request, { params }: Params): Promise<NextRe
     );
   }
 
-  return NextResponse.json({ ok: true, pid: started.pid, mode: previewing ? 'preview' : 'full' });
+  return NextResponse.json({ ok: true, pid: started.pid });
 }

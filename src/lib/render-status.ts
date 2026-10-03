@@ -12,13 +12,11 @@
  */
 
 export type JobState = 'running' | 'done' | 'failed' | 'cancelled';
-export type RenderMode = 'full' | 'preview';
 
 export const JOB_STATES: readonly JobState[] = ['running', 'done', 'failed', 'cancelled'];
 
 export type RenderStatus = {
   state: JobState;
-  mode: RenderMode;
   /**
    * Process id of the worker, for the UI to reason about a worker that died --
    * and for the server to tell one job's status from a newer job's. Zero means
@@ -34,7 +32,7 @@ export type RenderStatus = {
   totalScenes: number;
   /** Scenes finished so far. */
   renderedScenes: number;
-  /** 0..1 across the whole job (0..1 within the scene for a preview). */
+  /** 0..1 across the whole job. */
   progress: number;
   message: string | null;
 };
@@ -59,7 +57,6 @@ export function isRenderStatus(value: unknown): value is RenderStatus {
   const candidate = value as Partial<RenderStatus>;
   return (
     JOB_STATES.includes(candidate.state as JobState) &&
-    (candidate.mode === 'full' || candidate.mode === 'preview') &&
     typeof candidate.pid === 'number' &&
     typeof candidate.startedAt === 'number' &&
     typeof candidate.updatedAt === 'number' &&

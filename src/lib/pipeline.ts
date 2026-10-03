@@ -8,7 +8,6 @@
  *                      scenes.json    the validated storyboard
  *                      narration/     one WAV per scene, the worker's own
  *                      clips/         one MP4 per scene, each with its audio
- *                      preview.mp4    one scene, fully drawn
  *                      out.mp4        the concatenated video
  *                      status.json    the live render state
  *
@@ -28,7 +27,6 @@ import {
   INPUT_FILENAME,
   MAX_INPUT_CHARS,
   OUTPUT_FILENAME,
-  PREVIEW_FILENAME,
   RENDER_LOG_FILENAME,
   SCENES_FILENAME,
   SCRIPT_FILENAME,
@@ -80,7 +78,6 @@ export type ProjectFiles = {
   status: string;
   renderLog: string;
   out: string;
-  preview: string;
   clipsDir: string;
 };
 
@@ -94,7 +91,6 @@ export function projectFiles(id: string): ProjectFiles {
     status: path.join(dir, STATUS_FILENAME),
     renderLog: path.join(dir, RENDER_LOG_FILENAME),
     out: path.join(dir, OUTPUT_FILENAME),
-    preview: path.join(dir, PREVIEW_FILENAME),
     clipsDir: path.join(dir, CLIPS_DIRNAME),
   };
 }
@@ -198,10 +194,6 @@ export function hasVideo(id: string): boolean {
   return pathExists(projectFiles(id).out);
 }
 
-export function hasPreview(id: string): boolean {
-  return pathExists(projectFiles(id).preview);
-}
-
 /* ────────────────────────────── seams ───────────────────────────── */
 
 export async function textToScript(input: string, llm: Llm): Promise<Script> {
@@ -230,8 +222,6 @@ export type RenderHandles = {
 
 export type RenderSpawnOptions = {
   projectId: string;
-  /** Set to render a single scene for the preview; omit for the full video. */
-  sceneIndex?: number;
   statusPath: string;
   onExit: (code: number | null, signal: NodeJS.Signals | null) => void;
   onError: (error: Error) => void;
@@ -254,9 +244,6 @@ export function scenesToVideo(options: RenderSpawnOptions): RenderHandles {
     '--status',
     options.statusPath,
   ];
-  if (options.sceneIndex !== undefined) {
-    args.push('--scene', String(options.sceneIndex));
-  }
 
   const child = spawn(process.execPath, args, {
     cwd: process.cwd(),
@@ -266,7 +253,7 @@ export function scenesToVideo(options: RenderSpawnOptions): RenderHandles {
   // The worker's output is also persisted into the project folder, so a failure
   // is readable after the fact -- and after a server restart, unlike the
   // in-memory tail below. Truncated at job start, so the file always describes
-  // the most recent job (previews included).
+  // the most recent job.
   let logStream: fs.WriteStream | null = null;
   try {
     logStream = fs.createWriteStream(projectFiles(options.projectId).renderLog);
