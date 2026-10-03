@@ -11,7 +11,6 @@ npm test             # vitest, tests/e2e only
 npm run build        # production build
 npx next typegen     # only when typecheck complains about .next/types
 npm run render -- --project projects/<id>          # whole video, via the worker
-npm run render -- --project projects/<id> --scene 3 # one scene as preview.mp4
 ```
 
 There is no unit-test layer; every test is an e2e test in `tests/e2e/` and `npm test` renders **real video** with real ffmpeg, Chrome and Kokoro. It is slow in the way the product is slow, and the full-render test is the slowest thing in the repo by far. Suite-wide settings live in `vitest.config.mts` (`fileParallelism: false` and long timeouts are deliberate — two concurrent renders is what the render lock exists to prevent, on a 7.6 GiB machine).
@@ -26,7 +25,7 @@ Three consumers share one contract, and that is the shape of the whole repo:
 
 - **The Next app** (`src/app/`) — API routes plus one client page.
 - **The render worker** (`scripts/render-worker.ts`) — a separate process, spawned by the app or run by hand.
-- **The Remotion composition** (`src/remotion/`) — bundled and rendered by the worker, and bundled by the server for Board stills.
+- **The Remotion composition** (`src/remotion/`) — bundled and rendered by the worker; nothing else draws a scene.
 
 All three import the same `src/lib/*.ts` modules **directly as `.ts`** (e.g. `import { validateScenes } from './schema.ts'`). That is load-bearing, not a style choice: Node 24 runs the worker and the tests via type stripping, and Node requires the extension on relative imports, while webpack/esbuild resolve the same specifier. Never change a relative import to an extensionless one.
 
@@ -66,13 +65,9 @@ validate storyboard → take lock → ensure browser → bundle (overlapped by t
 
 ### The composition is the one place scenes become pictures
 
-`SceneByKind` in `src/remotion/Scene.tsx` dispatches a scene to its kind's block — one component per kind, each a RemotionUI source copied into `src/remotion/` and tracked in `remotion-ui.json`, never an npm dependency. The two exceptions are `scenes/concept/` and `scenes/diagram/`, assembled in-repo from the copied primitives (the registry has no equivalent) — the diagram block draws its boxes itself — rounded rectangles, or the cylinder a node's `shape` asks for — and draws each arrow with `ArrowAnnotate`. `scene-adapters.tsx` is the only thing mapping the DSL's fields onto the blocks' props (theme, accent, per-kind fields), and `Root.tsx` exposes the single composition every render — and every still — is drawn from.
+`SceneByKind` in `src/remotion/Scene.tsx` dispatches a scene to its kind's block — one component per kind, each a RemotionUI source copied into `src/remotion/` and tracked in `remotion-ui.json`, never an npm dependency. The two exceptions are `scenes/concept/` and `scenes/diagram/`, assembled in-repo from the copied primitives (the registry has no equivalent) — the diagram block draws its boxes itself — rounded rectangles, or the cylinder a node's `shape` asks for — and draws each arrow with `ArrowAnnotate`. `scene-adapters.tsx` is the only thing mapping the DSL's fields onto the blocks' props (theme, accent, per-kind fields), and `Root.tsx` exposes the single composition every render is drawn from.
 
-The Board's preview is not a second drawing of the same scene: `src/lib/still.ts` calls `renderStill` on that same composition at its last frame, so the preview is a real frame of the render and cannot disagree with it. That is the whole guarantee, and it is structural, not disciplinary — the SVG preview it replaced was a second renderer, and a second renderer is a second answer.
-
-Stills orchestration lives in `src/lib/still.ts`, not in the route, for the same reason `generate.ts` exists: a Next route module may export nothing but HTTP methods. It memoizes the bundle and `ensureBrowser` for the server process (cleared on failure, so a transient death doesn't poison every later thumbnail), renders one at a time through a module-level queue, and caches PNGs in a 24-entry in-memory LRU keyed by project, scene, width and the page's version token. Nothing reaches disk. Stills deliberately do not take the render lock — the lock serializes renders, and the queue is what bounds this path — so the Board stays usable while a render is running.
-
-The copied UI sources import each other through the `@/*` alias, and webpack does not read tsconfig `paths`: the mapping is registered in four places — the root tsconfig, `src/remotion/tsconfig.json`, `remotion.config.ts` for Studio, and `webpackAliasOverride` (`src/lib/bundle-config.ts`) for the worker and the stills path. A new bundling entry point without it fails at bundle time, not at typecheck.
+The copied UI sources import each other through the `@/*` alias, and webpack does not read tsconfig `paths`: the mapping is registered in four places — the root tsconfig, `src/remotion/tsconfig.json`, `remotion.config.ts` for Studio, and `webpackAliasOverride` (`src/lib/bundle-config.ts`) for the worker. A new bundling entry point without it fails at bundle time, not at typecheck.
 
 ### The model picks a kind; the blocks compute the pixels
 
@@ -86,7 +81,7 @@ The read paths are two steps, in one order: parse against `ScenesShapeSchema` (s
 
 One counting rule worth keeping: `countWrittenWords` counts every word a scene writes on screen — titles, list labels and details, a chart's names and roles, a diagram's box names, notes and arrow labels, a concept's prose — because they all share one face and one budget, and leaving any uncounted would be a way past the cap. The code listing is the deliberate exception: it is the scene's subject rather than its writing, and it is bounded by lines and characters instead.
 
-The faces come from `src/remotion/fonts.ts` — Inter at 400/500/600/700 and JetBrains Mono at 400/500/700, latin, through `@remotion/google-fonts` — loaded behind `delayRender`/`continueRender`, with a failed fetch cancelling the render rather than quietly baking every label in a fallback face. `src/remotion/index.ts` imports it for its side effect only; that import is load-bearing (a tree-shaking change there would silently render every label in a fallback face), and it is why rendering and stills are not offline: the first one in a process fetches the faces from Google's CDN.
+The faces come from `src/remotion/fonts.ts` — Inter at 400/500/600/700 and JetBrains Mono at 400/500/700, latin, through `@remotion/google-fonts` — loaded behind `delayRender`/`continueRender`, with a failed fetch cancelling the render rather than quietly baking every label in a fallback face. `src/remotion/index.ts` imports it for its side effect only; that import is load-bearing (a tree-shaking change there would silently render every label in a fallback face), and it is why rendering is not offline: the first render in a process fetches the faces from Google's CDN.
 
 ## Environment
 
@@ -98,9 +93,9 @@ DeepSeek rejects the strict `json_schema` mode, so every generate normally pays 
 
 ## Gotchas
 
-- **Rendering is not offline.** The renderer loads Inter and JetBrains Mono through `@remotion/google-fonts` at render time and fails loudly without network — a still pays the same first-use cost — and the first narration downloads Kokoro's model (see the worker's stage order). `src/remotion/index.ts` imports `fonts.ts` for its side effect only; a tree-shaking change there would silently render every label in a fallback face.
+- **Rendering is not offline.** The renderer loads Inter and JetBrains Mono through `@remotion/google-fonts` at render time and fails loudly without network, and the first narration downloads Kokoro's model (see the worker's stage order). `src/remotion/index.ts` imports `fonts.ts` for its side effect only; a tree-shaking change there would silently render every label in a fallback face.
 - Two tsconfigs: the root one **excludes** `src/remotion`, which has its own. `npm run typecheck` runs both.
-- Route handlers set `runtime = 'nodejs'` and `dynamic = 'force-dynamic'`, and `next.config.js` keeps `@remotion/renderer` and `@remotion/bundler` out of the server bundle (they spawn children and resolve native binaries from their own directory). Vitest aliases `next/server` to `next/server.js` for the same class of reason.
+- Route handlers set `runtime = 'nodejs'` and `dynamic = 'force-dynamic'`. Vitest aliases `next/server` to `next/server.js`: Next ships no `exports` map, so the specifier only resolves when the `.js` is spelled out.
 - `NARRATION_WPS = 2.0` in `src/lib/schema.ts` is a planning rate, not a measurement — accepted storyboards can in principle be refused at render time if the voice speaks slower than it. Piper measured ~3.6 words/s, so the old 2.5 had ~30% of slack; Kokoro's af_heart measured 2.28–3.05 words/s across a real storyboard (mean 2.60) and scenes written to a full 2.5 budget were refused, so the rate was lowered to 2.0 on 2026-10-02 — ~12% under the slowest measured text. Re-measure when `KOKORO_VOICE` changes; the overrun gate and the trim-only fit are the safety net.
 - Remotion is the one dependency with a licence worth checking before commercial use; the README links the terms.
 

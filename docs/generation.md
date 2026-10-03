@@ -9,7 +9,7 @@ configuration, defaulting to DeepSeek.
 Everything in this document happens behind a boundary that the test suite
 replaces with a fake. That is deliberate: the model is the one unreliable
 component, so it is the *only* thing that is substituted in tests. Validation,
-file-writing, stills and rendering are the real code in tests as in production.
+file-writing and rendering are the real code in tests as in production.
 
 ## Call one: the script
 
@@ -172,10 +172,10 @@ The final attempt is judged asymmetrically, and deliberately so:
   parse) is a hard error: *"The model returned a storyboard that does not match
   the scene format."* with the field-level complaints.
 - A storyboard that passes per-scene validation but misses the **duration
-  window** is **accepted and saved**. The user sees a budget warning, a full
-  render is refused, and Regenerate is the remedy. A second repair round could
-  throw away an otherwise drawable storyboard, and the product would rather
-  hand the user a usable board with a warning than nothing.
+  window** is **accepted and saved**. The user sees a budget warning, rendering
+  is refused, and Regenerate is the remedy. A second repair round could throw
+  away an otherwise drawable storyboard, and the product would rather hand the
+  user a usable storyboard with a warning than nothing.
 
 That trade shapes the failure mode users actually meet: not a hard error, but a
 saved storyboard with a budget warning and a disabled Render.

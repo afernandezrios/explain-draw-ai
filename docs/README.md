@@ -25,7 +25,7 @@ rules — not code identifiers, not implementation internals.
 | [domain-model.md](domain-model.md) | The two documents — script and storyboard — and the eight scene kinds, with every rule and cap |
 | [generation.md](generation.md) | How the model is asked for a script and a storyboard, how replies are constrained, validated and repaired, and how failures are reported |
 | [rendering.md](rendering.md) | How a storyboard becomes a video: stage order, narration, progress, cancellation, failure and the single-render lock |
-| [visual-language.md](visual-language.md) | How scenes become pictures: the eight kinds and their choreography, themes and accents, and the preview/render guarantee |
+| [visual-language.md](visual-language.md) | How scenes become pictures: the eight kinds and their choreography, themes and accents |
 | [web-application.md](web-application.md) | The user journey, the panes, the API surface and the render lifecycle as the page sees it |
 | [operations.md](operations.md) | Setup, configuration, artifacts on disk, the test posture, resource limits and current gaps |
 

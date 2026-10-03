@@ -41,9 +41,9 @@ assembled in-repo from the copied primitives.)
   the render worker. The first narration downloads the quantized Kokoro-82M
   model (~90 MB) into `models/`; after that, narration is offline.
 - **The type, on first use.** Every scene is set in Inter and JetBrains Mono,
-  loaded at render time through Remotion's Google Fonts integration. A still —
-  the Board's preview — or a render fetches them the first time either runs in
-  a process, and fails loudly without network.
+  loaded at render time through Remotion's Google Fonts integration. A render
+  fetches them the first time it runs in a process, and fails loudly without
+  network.
 
 - **A model endpoint.** The pipeline asks for strict structured outputs first
   (`response_format: json_schema`); endpoints that reject it (DeepSeek answers

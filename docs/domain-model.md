@@ -4,8 +4,7 @@ The product's data model is small and deliberately explicit. There are two
 creative documents — a **script** and a **storyboard** — and one vocabulary of
 drawing instructions: eight **scene kinds**. Every stage of the system reads and
 writes the same things, and every rule about them lives in one place, so the
-model's instructions, the validator, the preview and the renderer cannot
-disagree.
+model's instructions, the validator and the renderer cannot disagree.
 
 ## The input
 
@@ -28,8 +27,8 @@ the five-minute target is carried by the storyboard, not by the script.
 ## The storyboard
 
 The storyboard is the plan for the video: an ordered list of scenes, scene 1
-being the title scene. It is what the user reviews, what the renderer draws,
-and what the preview shows. Two properties are guaranteed about any storyboard
+being the title scene. It is what the user reviews and what the renderer draws.
+Two properties are guaranteed about any storyboard
 in the system, because every path that reads one re-establishes them:
 
 1. **It is structurally well-formed** — every scene has the fields its kind

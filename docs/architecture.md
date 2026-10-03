@@ -53,7 +53,6 @@ projects; the folder *is* the record. Inside it:
 | The storyboard | The validated scene list — the render input |
 | Narration audio | One spoken track per scene |
 | Scene clips | One finished video clip per scene, each with its audio already baked in |
-| The preview | One scene rendered fully, for the user to check before committing to a full render |
 | The finished video | All scene clips joined into the deliverable |
 | The render log | The worker's own output for the most recent job |
 | The status | The live state of the current job |
@@ -71,8 +70,8 @@ Three file-handling principles run through the whole system:
   cancelled or crashed render therefore never leaves behind a truncated video
   that looks finished.
 - **A failed step leaves the last good state intact.** A failed storyboard
-  rebuild leaves the previous storyboard untouched; a failed preview leaves the
-  previous preview untouched. There is no window in which an artifact is
+  rebuild leaves the previous storyboard untouched; a failed render leaves the
+  last finished video untouched. There is no window in which an artifact is
   missing because a newer version failed.
 
 ## One render at a time
@@ -137,12 +136,10 @@ their storyboard rebuilt in the application before they can render again.
 
 ## One place where scenes become pictures
 
-The Board's preview and the worker's frames are produced by the **same
-composition**. The preview is not a drawing of its own: the server renders the
-composition's own last frame to a still image through the same player the
-worker uses, and the worker renders every frame of the same composition with
-the same components and fonts. There is no second implementation to drift: the
-picture the user approves is a frame of the video, not an approximation of it.
+The composition is the **only** thing that turns a scene into a picture: the
+worker renders every frame of it, with the same components and fonts, and
+nothing else draws a scene. There is no second implementation to drift, so what
+the storyboard describes is exactly what the video shows.
 
 ## Configuration and environment
 
@@ -167,7 +164,7 @@ they share:
 | Location | Role |
 |---|---|
 | The application directory | The browser page and the API handlers — the user-facing surface |
-| The library directory | Everything shared: the storyboard contract, generation, validation, server-side stills, project files, the render lock and status, the narration wrapper |
+| The library directory | Everything shared: the storyboard contract, generation, validation, project files, the render lock and status, the narration wrapper |
 | The composition directory | The scene-kind components the renderer mounts: the block source for each kind, the shared primitives and helpers they use, and the adapter that translates storyboard scenes into their props |
 | The worker script | The render worker's entry point — the only place that imports the narration engine |
 | The component-install config | Records the component library, its root and its aliases, so its blocks can be added or refreshed in place |
@@ -181,8 +178,8 @@ bundler accepts the same specifiers. Second, the copied component sources
 address each other through a short alias that only exists inside the
 composition directory, and webpack does not read the TypeScript compiler's
 path mappings — so the alias is registered explicitly for every bundler: the
-Studio configuration, and a shared override the worker and the stills route
-pass into their own builds. And the narration engine is still imported *only*
+Studio configuration, and a shared override the worker passes into its own
+build. And the narration engine is still imported *only*
 by the worker's entry point, so the web server and the drawing program never
 drag its native runtime into their bundles.
 
@@ -198,19 +195,18 @@ pasted text
    │                                          ▼
    │                                   validated storyboard
    │                                          │
-   │                              ┌───────────┴────────────┐
-   │                              ▼                        ▼
-   │                        web preview              render worker
-   │                      (a frame of the                  │
-   │                      composition                      ▼
-   │                      itself, as a                scene clips
-   │                      still image)           (narration baked in)
-   │                                                       │
-   │                                                       ▼
-   │                                                 joined video
+   │                                          ▼
+   │                                    render worker
+   │                                          │
+   │                                          ▼
+   │                                    scene clips
+   │                                (narration baked in)
+   │                                          │
+   │                                          ▼
+   │                                    joined video
    ▼
-project folder: input, script, storyboard, narration, clips, preview, video,
-render log, status
+project folder: input, script, storyboard, narration, clips, video, render log,
+status
 ```
 
 The next documents go a level deeper into each area: the documents themselves

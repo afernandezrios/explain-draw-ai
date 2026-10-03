@@ -6,19 +6,13 @@ terminal, and which behaves identically either way. This document describes what
 a render actually does, what it promises, and what it leaves behind when
 something goes wrong.
 
-## Two kinds of job
+## One kind of job
 
-- **A full render** draws every scene in the storyboard and joins the results
-  into the finished video.
-- **A preview render** draws exactly one scene, completely, so the user can
-  check the look of the video before committing to a full render.
+A render draws every scene in the storyboard and joins the results into the
+finished video. Every render runs the same stages in the same order and writes
+the same progress record in the same format.
 
-A preview deliberately skips the total-length check that a full render
-enforces, so a storyboard that is still being brought into the five-minute
-window can still be inspected. Either job writes the same progress record in
-the same format, tagged with its mode.
-
-## A full render, stage by stage
+## A render, stage by stage
 
 ### 1. Pre-flight: nothing starts on a storyboard that cannot be drawn
 
@@ -29,11 +23,11 @@ unreadable, empty or invalid storyboard is refused with the problems listed (up
 to eight of them), and nothing is written — not even a status file, so a
 previous job's outcome stays visible for diagnosis.
 
-A full render additionally refuses a storyboard whose total duration falls
-outside the accepted four-and-a-half to five-and-a-half-minute window, telling
-the operator the total and the bound and to regenerate the storyboard. This is
-the same window the application reports at review time; the worker is the last
-line of defence.
+The worker refuses a storyboard whose total duration falls outside the accepted
+four-and-a-half to five-and-a-half-minute window, telling the operator the
+total and the bound and to regenerate the storyboard. This is the same window
+the application reports at review time; the worker is the last line of
+defence.
 
 ### 2. Claim the single-render lock
 
@@ -49,9 +43,9 @@ are described in [architecture.md](architecture.md).
 
 ### 3. Write the running status
 
-A status record is created in the project folder describing a running job: its
-mode, the worker's process identity, timestamps, the scene counters, progress,
-and an opening human-readable message. From this point on, the status record is
+A status record is created in the project folder describing a running job: the
+worker's process identity, timestamps, the scene counters, progress, and an
+opening human-readable message. From this point on, the status record is
 the single source of truth for what is happening — which matters precisely
 because the worker is a separate process that can be killed outright.
 
@@ -126,20 +120,8 @@ bitrate. That agreement is why those settings live together as one contract
 rather than at each call site. Audio is additionally trimmed to whole audio
 frames per clip so narration cannot drift behind the drawing across the join.
 
-A full render ends with state `done`, the message *"Render complete."* and exit
+A render ends with state `done`, the message *"Render complete."* and exit
 code 0.
-
-### Preview renders
-
-A preview is the same machinery for one scene: wait for that scene's narration,
-draw it alone, verify it audible, and publish it. Its progress is reported as
-that single scene's own 0-to-1 progress rather than as a fraction of one scene
-total (which would show 100% immediately). It ends with state `done` and the
-message *"Preview ready."*
-
-The preview is drawn to a temporary name and renamed only after the audible
-check, so a refused preview cannot destroy a previous good preview — and it can
-never overwrite a finished scene clip from a real render either.
 
 ## The status contract
 
@@ -149,11 +131,10 @@ watches it: the API, the page, and a human reading the folder. It carries:
 | Field | Meaning |
 |---|---|
 | State | `running`, `done`, `failed` or `cancelled` — only `running` is non-terminal |
-| Mode | Full render or preview |
 | Process identity | The worker that wrote it; zero means "written on a worker's behalf" |
 | Timestamps | Start, last update, and finish (empty while running) |
 | Scene counters | Which scene is being drawn, how many the job has, how many are finished |
-| Progress | 0 to 1 across the whole job (within the scene for a preview) |
+| Progress | 0 to 1 across the whole job |
 | Message | The human-readable line, e.g. *"Preparing narration…"*, *"Narrating scene 3 of 12…"*, *"Drawing scene 3 of 12…"*, *"Joining the scenes…"* |
 
 Every write to it is atomic, so a reader polling the file never sees a torn
@@ -204,7 +185,6 @@ The system's posture toward partial work is consistent:
 |---|---|---|
 | Cancelled or failed mid-run | Scene clips already finished stay in the folder | The half-drawn scene (written under a temporary name) |
 | Any failure during the join | The previous finished video is untouched | The temporary join and its list |
-| A refused preview | The previous preview is untouched | The temporary preview clip |
 | A rejected narration | Whatever the previous render wrote | The temporary audio file |
 | Always | — | Nothing ever appears under a name a reader could mistake for finished |
 
@@ -266,7 +246,6 @@ silently broken for that scene's whole length.
 Artifacts an operator can expect to find, by name, after working with a
 project: the storyboard (`scenes.json`), the status record (`status.json`), the
 per-job output capture (`render.log`), numbered clips under `clips/`, per-scene
-recordings under `narration/`, the single-scene `preview.mp4` (with a transient
-`preview-clip.mp4`), the finished `out.mp4`, and the cross-project lock
-`.active-render.json`. Every one of them is written atomically; a reader never
+recordings under `narration/`, the finished `out.mp4`, and the cross-project
+lock `.active-render.json`. Every one of them is written atomically; a reader never
 observes a partial state.

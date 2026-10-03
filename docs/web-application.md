@@ -1,19 +1,19 @@
 # The web application
 
 The application is a single page with one visible artifact at a time, wrapped
-around the pipeline: paste a topic, review and edit the script, inspect the
-storyboard, preview a scene, render the video, download it. It never draws a
-frame itself and never talks to the model directly — it is the surface over the
-pipeline and the watcher of the render worker.
+around the pipeline: paste a topic, review and edit the script, render the
+video, download it. It never draws a frame itself and never talks to the model
+directly — it is the surface over the pipeline and the watcher of the render
+worker.
 
 ## The shell
 
 - A **toolbar** names the product and the current project's video title, and
   carries a status pill: *Rendering* (with a pulse) or *Idle*.
-- A **sidebar** lists exactly four panes, in pipeline order, always reachable:
-  **Input**, **Script**, **Board**, **Video**. Each shows a small measure of its
-  artifact when one exists — characters pasted, paragraphs in the script, scenes
-  on the board, and a presence mark for the video.
+- A **sidebar** lists exactly three panes, in pipeline order, always reachable:
+  **Input**, **Script**, **Video**. Each shows a small measure of its artifact
+  when one exists — characters pasted, paragraphs in the script, and a presence
+  mark for the video.
 - One **artifact pane** is visible at a time. An empty pane is never a dead end:
   it shows a ghosted hint explaining where its artifact comes from and a way
   back to the Input pane.
@@ -25,9 +25,9 @@ pipeline and the watcher of the render worker.
   Cancel control; when idle it rests with the last outcome and how long ago it
   happened.
 
-The dependency order is the product's grammar: the input gates the script, the
-script gates the board, the board gates the video. Nothing downstream can be
-created without its upstream document.
+The dependency order is the product's grammar: the input gates the script, and
+the script gates the video. Nothing downstream can be created without its
+upstream document.
 
 ## The journey
 
@@ -67,33 +67,7 @@ copy of the storyboard, and letting an edit land mid-render would produce a
 video that does not match what is on disk. The refusal applies server-side too,
 not just as a disabled button.
 
-### 3. Inspect the storyboard
-
-The Board pane shows a horizontal strip of scene thumbnails — each labelled
-with its number, title and duration — with the selected scene drawn large
-below, plus a scene readout in the scene's own terms (*"Scene 3 of 12 · Title ·
-12s · 5 points"*) and Previous/Next navigation. Thumbnails and artwork are
-rendered on demand: each is a still of the composition — the scene's own final
-frame — produced by the server at the requested width and cached in memory, so
-nothing is stored as a file and the Board is fully populated the moment a
-storyboard exists, before any render. The first still after a server start pays
-a one-time cost (bundling the composition, downloading the headless browser,
-fetching the fonts); after that the strip is quick, and every image is keyed to
-the storyboard version, so a rebuilt storyboard never shows a stale frame.
-Stills are served through their own one-at-a-time queue rather than the render
-lock, so the Board stays usable while a render is in flight.
-
-If a scene preview video exists for the project, a player appears under the
-artwork. The pane's primary action is **Render this scene**: it takes the
-single render lock, synthesizes that scene's narration, and draws it alone —
-the fastest way to check the look before committing to the full render.
-
-The still is a frame of the same composition the worker renders — the same
-components, the same fonts, the same canvas and theme — so what the Board shows
-is exactly what the renderer will draw, down to the pixel. Nothing about the
-preview is drawn twice.
-
-### 4. Render
+### 3. Render
 
 **Render** starts the full job. It is available whenever the pane has something
 to render, and refused (server-side as well as by a disabled button) when the
@@ -108,7 +82,7 @@ stops it, and the button stays held only once the server has confirmed a worker
 was actually signalled — a refused or empty answer re-enables it, so the user
 can never be stuck.
 
-### 5. Watch and download
+### 4. Watch and download
 
 When a render finishes, the Video pane offers a player, a **Download out.mp4**
 button, and the artifact's location on disk. The video is served with byte-range
@@ -156,10 +130,9 @@ returned something that does not validate.
 | Save script | Writes an edited script, with the same length rules the model is held to |
 | Rebuild storyboard | Regenerates the storyboard from the saved script (one model call, no new script) |
 | Status | The polling endpoint: last status, whether this project owns the current render, artifact presence, budget verdict |
-| Start render | Full render by default, single-scene preview via a scene index; all the pre-flight refusals happen here |
+| Start render | Starts the render; takes no body, and all the pre-flight refusals happen here |
 | Cancel | Asks to stop this project's render; false simply means it was already over |
-| Video | Serves the finished video or the preview, with byte ranges; no caching |
-| Scene still | One frame of the composition as a PNG at a requested width; content-addressed by a storyboard version, so a versioned URL can be cached hard |
+| Video | Serves the finished video, with byte ranges; no caching |
 | Render log | The tail of the captured worker output |
 
 ## Render lifecycle, from the app's side
@@ -167,8 +140,7 @@ returned something that does not validate.
 **Exactly one render at a time, enforced by a shared file.** The lock is not
 server memory: each request handler has its own module state and the worker is
 a separate process, so only an artifact on disk can be authoritative. The lock
-records the worker's process id, the project and its folder, the mode, the
-previewed scene, and a start time.
+records the worker's process id, the project and its folder, and a start time.
 
 **Spawn, then claim.** If a live job exists the start is refused as busy.
 Otherwise the worker is spawned and the lock is immediately claimed with the
@@ -203,21 +175,19 @@ media players, fetches the worker log if the job failed, and stops.
 
 - **Editing is locked during a render of that project.** Save, rebuild and the
   script fields are disabled and server-refused with a conflict. Generating a
-  new project is the deliberate exception. Navigating panes, selecting scenes,
-  dismissing messages, playing and downloading existing media, and cancelling
-  all remain available.
+  new project is the deliberate exception. Navigating panes, dismissing
+  messages, playing and downloading existing media, and cancelling all remain
+  available.
 - **The budget verdict is phrased entirely on the server.** The browser never
   formats clocks or re-derives the window; it prints the sentence it was given
   and disables rendering when the verdict is negative. A passing budget
   surfaces only by *not* blocking the Render button.
 - **A broken storyboard blocks new work, never old artifacts.** If the stored
-  storyboard cannot be read as a storyboard, rendering and preview drawing are
-  refused with the specific problems listed — but an existing finished video
-  remains playable and downloadable.
-- **Artifacts are never cached.** Imagery carries a version that changes when
-  the storyboard is rebuilt — a versioned still URL is served as immutable,
-  while the player URLs are re-keyed when a job ends — so the page always shows
-  the current artifact rather than a stale one.
+  storyboard cannot be read as a storyboard, rendering is refused with the
+  specific problems listed — but an existing finished video remains playable
+  and downloadable.
+- **Artifacts are never cached.** The player URLs are re-keyed when a job ends,
+  so the page always shows the current artifact rather than a stale one.
 
 Next: how the storyboard documents are produced, in
 [generation.md](generation.md); how video is produced, in

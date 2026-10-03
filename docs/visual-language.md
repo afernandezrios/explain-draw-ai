@@ -4,8 +4,8 @@ Every scene in the finished video is one of eight **scene kinds**, and each kind
 is drawn by its own choreographed component — a scene block taken from
 **RemotionUI** and copied into this repository as source, or, for the concept
 and diagram scenes, assembled in-repo from those copied primitives. This
-document describes how a scene becomes a picture, what the pictures look like,
-and the guarantees that keep the preview and the video showing the same thing.
+document describes how a scene becomes a picture, and what the pictures look
+like.
 
 ## From scene to picture
 
@@ -24,8 +24,7 @@ refreshing it is a deliberate command rather than a dependency bump.
 
 Each block draws to the same stage: a 1920×1080 canvas at 24 frames per second,
 with a safe area the block keeps its content inside. A block reads the canvas
-each frame and lays itself out against it — which is also why a still can be
-produced at any width without redrawing anything.
+each frame and lays itself out against it.
 
 ## The eight kinds
 
@@ -83,29 +82,9 @@ precise, modern pairing rather than a handwriting face. The faces are loaded at
 render time through Remotion's Google Fonts integration: the first render in a
 process fetches them, the frame is held until they are ready, and a fetch that
 fails fails the render loudly rather than quietly drawing every label in a
-fallback face. One loader serves the whole composition and the stills server
-alike, so each face is fetched once per process rather than once per block.
+fallback face. One loader serves the whole composition, so each face is fetched
+once per process rather than once per block.
 
-This is why **rendering and stills are not offline on first use**: the fonts,
-the headless browser and the voice model are the three things fetched from the
-network the first time a process needs them. Afterwards they are cached.
-
-## Preview and render are the same drawing
-
-The Board's preview is not a drawing at all: it is a **frame of the composition
-itself**, rendered server-side through the same player the worker uses. The
-still is taken from the scene's last frame — every block holds its finished
-state to the end of its clip, so the last frame is the fully revealed scene —
-and it is produced by the same blocks, the same fonts, the same canvas and the
-same theme and accent the render will use.
-
-In business terms: **the picture the user approves is a frame of the video, not
-an approximation of it.** A change to how a list ticks off, how a headline
-sweeps or how an accent resolves lands in the preview and the video at once and
-cannot drift. The only difference is that a still is silent.
-
-Stills cost something on first use — the composition is bundled, the browser is
-downloaded and the fonts are fetched once per server process — and are then
-cached in memory, one at a time and keyed to the storyboard version that
-produced them, so a rebuilt storyboard never shows a stale frame. They never
-take the render lock, so the Board stays available while a render is in flight.
+This is why **rendering is not offline on first use**: the fonts, the headless
+browser and the voice model are the three things fetched from the network the
+first time a process needs them. Afterwards they are cached.

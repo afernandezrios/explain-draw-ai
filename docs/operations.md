@@ -15,8 +15,8 @@ lives, how it is tested, and what is currently known to be outstanding.
   first render, so the first render needs network and takes noticeably longer.
 - **Network on first use** for three things: the headless browser, the local
   voice model (~90 MB), and the two font families (Inter and JetBrains Mono)
-  that a still or a render fetches from Google's font CDN the first time either
-  runs in a process. Afterwards, narration and rendering are offline.
+  that a render fetches from Google's font CDN the first time it runs in a
+  process. Afterwards, narration and rendering are offline.
 - **On WSL2**, Chrome's shared libraries usually need installing by hand; the
   README lists the packages, and a render that dies with a missing-library
   error should be checked against that list first.
@@ -62,15 +62,14 @@ cp .env.local.example .env.local     # then put your key in it
 npm run dev                          # http://localhost:3000
 ```
 
-Paste a topic, press Generate, review the script and board, then Render. The
-page is keyed by `/?project=<id>`, so a reload or a bookmark comes back to the
-same project.
+Paste a topic, press Generate, review the script, then Render. The page is
+keyed by `/?project=<id>`, so a reload or a bookmark comes back to the same
+project.
 
 A render can also be started from a terminal, which is useful for long runs:
 
 ```bash
 npm run render -- --project projects/<id>            # whole video
-npm run render -- --project projects/<id> --scene 3  # one scene as a preview
 ```
 
 Both entry points obey the same single-render lock, so a command-line render
@@ -88,7 +87,6 @@ A project is a folder. After working with a project it contains:
 | The storyboard file | The validated scene list — the render input |
 | `narration/` | One WAV per scene; never pruned |
 | `clips/` | One numbered clip per scene, narration baked in; kept after the join |
-| `preview.mp4` | The most recent single-scene preview |
 | `out.mp4` | The finished video |
 | `render.log` | The worker's output for the most recent job, truncated at job start |
 | `status.json` | The live render state |
@@ -136,14 +134,13 @@ What it verifies, in functional terms:
 - **The API surface** — creating, reading, editing and rebuilding projects;
   the error mapping; the busy-render refusals; and that a failed rebuild leaves
   the previous storyboard untouched.
-- **The render lifecycle** — the budget gate on full renders (and the
-  single-scene exemption), lock races, cancellation semantics (finished clips
-  kept, no video published, a distinct exit code), a killed worker being marked
-  failed, and the video route's range-serving behaviour.
+- **The render lifecycle** — the budget gate on renders, lock races,
+  cancellation semantics (finished clips kept, no video published, a distinct
+  exit code), a killed worker being marked failed, and the video route's
+  range-serving behaviour.
 - **Real rendering** — codec, canvas, frame rate and duration of the produced
-  file; all scene clips present and join temporaries cleaned up; a repeated
-  render being byte-identical; and previews never touching the full-render
-  clips.
+  file; all scene clips present and join temporaries cleaned up; and a repeated
+  render being byte-identical.
 
 What it deliberately does not cover: provider compliance and the plain-JSON
 fallback path against a real endpoint, token/cost accounting, audio quality
@@ -161,14 +158,14 @@ to a human pass. Check before writing or modifying tests as part of a change.
 
 - **Old projects' storyboards no longer validate.** The typed scene model
   replaced the flat shape vocabulary, so a `scenes.json` written before the
-  change fails validation: its Board is refused and it cannot render. The
-  remedy is in the app — rebuild the storyboard from the saved script.
+  change fails validation: the storyboard is refused and the project cannot
+  render. The remedy is in the app — rebuild the storyboard from the saved
+  script.
 - **The test suite and its fixtures predate the current formats.** The canned
   storyboards under the test suite were written for the old shape vocabulary
-  and before narration, and its route tests still exercise the retired preview
-  route. The maintainer's test pass — updating fixtures and route assertions —
-  is outstanding; until it lands, the type check and `npm test` are red. This
-  is fixture drift, not a missing capability.
+  and before narration. The maintainer's test pass — updating the fixtures — is
+  outstanding; until it lands, the type check and `npm test` are red. This is
+  fixture drift, not a missing capability.
 - **The demo video predates the scene-kind visual system.** The `demo.mp4` in
   the repository was recorded with the older whiteboard drawing; the current
   renderer draws the eight typed kinds described in
