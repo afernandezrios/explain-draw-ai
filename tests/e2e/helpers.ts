@@ -206,8 +206,6 @@ export function writeLock(id: string, pid: number): void {
       {
         projectId: id,
         projectDir: projectFiles(id).dir,
-        mode: 'full',
-        sceneIndex: null,
         pid,
         startedAt: Date.now(),
       },

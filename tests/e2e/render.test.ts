@@ -2,18 +2,16 @@
  * The render half: the real worker, the real renderer, real ffmpeg.
  *
  * Renders are the slow part, so the storyboards here are the cheapest ones the
- * format allows: the sample (3 x 10s) for a single scene render or a preview,
- * and 39 x 7s (273s, just inside the window) when a *full* render has to
- * happen. That last one is not a choice -- the budget gate is part of the
- * product (a ~5 minute video, refused outside 270-330s), so a full render the
- * worker will accept is at least 6480 frames. The 30s sample from the spec's
- * task list can only ever be rendered a scene at a time, which is what the
- * preview path does, and there is a test below pinning that refusal.
+ * format allows: 39 x 7s (273s, just inside the window) for a render that has
+ * to happen, and the 3 x 10s sample for the refusals. 273s is not a choice --
+ * the budget gate is part of the product (a ~5 minute video, refused outside
+ * 270-330s), so a render the worker will accept is at least 6480 frames. The
+ * 30s sample can never pass that gate, and there is a test below pinning the
+ * refusal.
  *
  * FakeLLM is not used here: none of this needs a model.
  */
 
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
@@ -33,7 +31,6 @@ import {
   readLockFile,
   releaseLock,
   runWorker,
-  shortScene,
   spawnWorker,
   useTempProjectsRoot,
   waitForExit,
@@ -57,51 +54,6 @@ beforeEach(() => {
 afterAll(() => {
   releaseLock();
   fs.rmSync(root, { recursive: true, force: true });
-});
-
-function sha256(file: string): string {
-  return createHash('sha256').update(fs.readFileSync(file)).digest('hex');
-}
-
-describe('a rendered scene', () => {
-  it('comes out in the settings the concat depends on', async () => {
-    const project = makeProject(fakeScenes(), { input: 'sample' });
-
-    const result = await runWorker(project, ['--scene', '0']);
-    expect(result.code).toBe(0);
-
-    const preview = path.join(project.dir, 'preview.mp4');
-    expect(fs.existsSync(preview)).toBe(true);
-
-    // ffprobe, not a metadata assertion: this is the file a player receives.
-    const info = await ffprobe(preview);
-    expect(info.codec).toBe('h264');
-    expect(info.width).toBe(CANVAS_WIDTH);
-    expect(info.height).toBe(CANVAS_HEIGHT);
-    expect(info.fps).toBe(FPS);
-    expect(info.durationSeconds).toBeCloseTo(10, 1);
-
-    // The preview renders to a clip of its own and cleans it up, so a finished
-    // full render's clips are never destroyed by previewing a scene.
-    expect(fs.existsSync(path.join(project.dir, 'preview-clip.mp4'))).toBe(false);
-    expect(fs.readdirSync(path.join(project.dir, 'clips'))).toEqual([]);
-  }, 300_000);
-
-  it('is byte-identical when the same scene is rendered twice', async () => {
-    const project = makeProject([shortScene(0)], { input: 'determinism' });
-
-    const first = await runWorker(project, ['--scene', '0']);
-    expect(first.code).toBe(0);
-    const firstHash = sha256(path.join(project.dir, 'preview.mp4'));
-
-    const second = await runWorker(project, ['--scene', '0']);
-    expect(second.code).toBe(0);
-    const secondHash = sha256(path.join(project.dir, 'preview.mp4'));
-
-    // Doodle geometry is seeded from shape content alone, so a second run
-    // cannot jitter: same frames, same encode, same bytes.
-    expect(secondHash).toBe(firstHash);
-  }, 300_000);
 });
 
 describe('a full render', () => {
@@ -132,14 +84,13 @@ describe('a full render', () => {
 
     const status = readStatus(project.id);
     expect(status?.state).toBe('done');
-    expect(status?.mode).toBe('full');
     expect(status?.progress).toBe(1);
     expect(status?.renderedScenes).toBe(39);
     expect(status?.totalScenes).toBe(39);
     expect(activeJob()).toBeNull();
   }, 900_000);
 
-  it('refuses the 30s sample as a full render, so it is only ever previewed', async () => {
+  it('refuses the 30s sample, under the minimum the product promises', async () => {
     // `fakeScenes()` is 3 x 10s: the sample the spec's task list wants rendered
     // whole. The budget gate is the older, frozen rule and it wins, so this is
     // the documented reason the full-render test above uses 39 x 7s instead.
@@ -156,50 +107,11 @@ describe('a full render', () => {
   }, 120_000);
 });
 
-describe('a preview through the seam', () => {
-  it('renders one scene to preview.mp4 without touching the clips folder', async () => {
-    const project = makeProject(fakeScenes(), { input: 'preview seam' });
-
-    const started = startJob({ projectId: project.id, mode: 'preview', sceneIndex: 1 });
-    expect(started.ok).toBe(true);
-
-    // Watch the status while it runs: a preview is its own one-scene job, so its
-    // progress is the scene's own 0..1, never an index over one scene (which
-    // would read 100% from the first frame and make the bar a lie).
-    const seen: number[] = [];
-    const deadline = Date.now() + 240_000;
-    while (Date.now() < deadline) {
-      const snapshot = readStatus(project.id);
-      if (snapshot?.state === 'running') {
-        seen.push(snapshot.progress);
-      } else if (snapshot?.state === 'done') {
-        break;
-      }
-      await new Promise((resolve) => setTimeout(resolve, 200));
-    }
-
-    const done = await waitForStatus(project.id, (status) => status.state === 'done', 'the preview');
-    expect(done.mode).toBe('preview');
-    expect(done.totalScenes).toBe(1);
-    expect(done.progress).toBe(1);
-    expect(seen.some((progress) => progress > 0 && progress < 1)).toBe(true);
-
-    const preview = path.join(project.dir, 'preview.mp4');
-    expect(fs.existsSync(preview)).toBe(true);
-    expect((await ffprobe(preview)).durationSeconds).toBeCloseTo(10, 1);
-
-    // A preview is not a partial full render: no clips, no intermediate file.
-    expect(fs.readdirSync(path.join(project.dir, 'clips'))).toEqual([]);
-    expect(fs.existsSync(path.join(project.dir, 'preview-clip.mp4'))).toBe(false);
-    expect(activeJob()).toBeNull();
-  }, 300_000);
-});
-
 describe('cancelling', () => {
   it('stops through startJob/cancelJob, releases the lock and keeps finished clips', async () => {
     const project = makeProject(fullStoryboard(), { input: 'cancel' });
 
-    const started = startJob({ projectId: project.id, mode: 'full' });
+    const started = startJob({ projectId: project.id });
     expect(started.ok).toBe(true);
 
     // Wait for the worker's own status to move past the first scene. Waiting on
@@ -255,7 +167,7 @@ describe('cancelling', () => {
   it('marks the job failed when the worker dies without reporting anything', async () => {
     const project = makeProject(fullStoryboard(), { input: 'crash' });
 
-    const started = startJob({ projectId: project.id, mode: 'full' });
+    const started = startJob({ projectId: project.id });
     expect(started.ok).toBe(true);
 
     const lock = activeJob();
@@ -278,10 +190,10 @@ describe('one render at a time', () => {
   it('refuses a second render while one is live', async () => {
     const project = makeProject(fullStoryboard(), { input: 'busy' });
 
-    const first = startJob({ projectId: project.id, mode: 'full' });
+    const first = startJob({ projectId: project.id });
     expect(first.ok).toBe(true);
 
-    const second = startJob({ projectId: project.id, mode: 'preview', sceneIndex: 0 });
+    const second = startJob({ projectId: project.id });
     expect(second).toEqual({ ok: false, reason: 'busy', activeProjectId: project.id });
 
     expect(cancelJob(project.id)).toBe(true);
@@ -292,7 +204,7 @@ describe('one render at a time', () => {
     const busy = makeProject(fullStoryboard(), { input: 'busy project' });
     const other = makeProject(fullStoryboard(), { input: 'other project' });
 
-    expect(startJob({ projectId: busy.id, mode: 'full' }).ok).toBe(true);
+    expect(startJob({ projectId: busy.id }).ok).toBe(true);
     // The Cancel button carries an id, and must not stop somebody else's render.
     expect(cancelJob(other.id)).toBe(false);
     expect(activeJob()?.projectId).toBe(busy.id);
@@ -308,7 +220,7 @@ describe('one render at a time', () => {
     // Reclaiming on sight is what stops a crashed render from wedging the app.
     expect(activeJob()).toBeNull();
 
-    const started = startJob({ projectId: project.id, mode: 'full' });
+    const started = startJob({ projectId: project.id });
     expect(started.ok).toBe(true);
 
     expect(cancelJob(project.id)).toBe(true);
@@ -317,16 +229,20 @@ describe('one render at a time', () => {
 });
 
 describe('the worker and the render lock', () => {
+  // These use the window-passing storyboard: the budget gate runs before the
+  // lock is claimed, so a one-scene storyboard would be refused on its length
+  // and never reach the lock decision under test.
+
   it('refuses to start while another live render holds the lock', async () => {
-    const project = makeProject([shortScene(0)], { input: 'held lock' });
+    const project = makeProject(fullStoryboard(), { input: 'held lock' });
     // A live lock, as an app render would leave behind. `process.pid` is alive
     // and is never signalled by anything in this test.
     writeLock(project.id, process.pid);
 
-    const result = await runWorker(project, ['--scene', '0']);
+    const result = await runWorker(project);
     expect(result.code).toBe(1);
     expect(result.stderr).toContain('another render is already running');
-    expect(fs.existsSync(path.join(project.dir, 'preview.mp4'))).toBe(false);
+    expect(fs.existsSync(path.join(project.dir, 'out.mp4'))).toBe(false);
 
     // The lock it declined to take is left exactly as it was: the worker must
     // not "helpfully" clear somebody else's job.
@@ -334,9 +250,9 @@ describe('the worker and the render lock', () => {
   }, 120_000);
 
   it('claims the lock for its own pid and releases it on the way out', async () => {
-    const project = makeProject([shortScene(0)], { input: 'worker claims' });
+    const project = makeProject(fullStoryboard(), { input: 'worker claims' });
 
-    const { child, output } = spawnWorker(project, ['--scene', '0']);
+    const { child, output } = spawnWorker(project);
     // The worker writes its status after claiming, so a visible status means
     // the lock is already held.
     await waitForStatus(project.id, (status) => status.state === 'running', 'the worker to start');
@@ -344,22 +260,31 @@ describe('the worker and the render lock', () => {
     expect(held?.pid).toBe(child.pid);
     expect(held?.projectId).toBe(project.id);
 
+    // Stopped rather than run to completion: this test is about the lock, and a
+    // full render would cost fifteen minutes to say the same thing.
+    child.kill('SIGTERM');
     const { code } = await waitForExit(child);
-    expect(code).toBe(0);
+    expect(code).toBe(130);
     expect(output().stderr).not.toContain('another render');
-    expect(fs.existsSync(path.join(project.dir, 'preview.mp4'))).toBe(true);
+    expect(fs.existsSync(path.join(project.dir, 'out.mp4'))).toBe(false);
     // Released without the app's help: `npm run render` by hand must not wedge
     // the UI's next render either.
     expect(readLockFile()).toBeNull();
   }, 120_000);
 
   it('takes over a lock left behind by a worker that died', async () => {
-    const project = makeProject([shortScene(0)], { input: 'stale lock worker' });
+    const project = makeProject(fullStoryboard(), { input: 'stale lock worker' });
     writeLock(project.id, IMPOSSIBLE_PID);
 
-    const result = await runWorker(project, ['--scene', '0']);
-    expect(result.code).toBe(0);
-    expect(fs.existsSync(path.join(project.dir, 'preview.mp4'))).toBe(true);
+    const { child, output } = spawnWorker(project);
+    // A visible status means the stale lock was reclaimed and this worker holds
+    // the new one.
+    await waitForStatus(project.id, (status) => status.state === 'running', 'the worker to start');
+    child.kill('SIGTERM');
+    const { code } = await waitForExit(child);
+    expect(code).toBe(130);
+    expect(output().stderr).not.toContain('another render');
+    expect(fs.existsSync(path.join(project.dir, 'out.mp4'))).toBe(false);
     expect(readLockFile()).toBeNull();
   }, 120_000);
 
@@ -376,8 +301,6 @@ describe('the worker and the render lock', () => {
         claimLock(path.join(notADirectory, LOCK_FILENAME), {
           projectId: 'anything',
           projectDir: path.join(notADirectory, 'anything'),
-          mode: 'full',
-          sceneIndex: null,
           pid: process.pid,
           startedAt: Date.now(),
         }),
@@ -437,29 +360,6 @@ describe('the draw timeline', () => {
 });
 
 describe('the worker refuses what it cannot honour', () => {
-  it('rejects a malformed --scene instead of rendering the whole video', async () => {
-    const project = makeProject(fakeScenes(), { input: 'bad flag' });
-
-    for (const bad of ['abc', '-1', '1.5', '']) {
-      const result = await runWorker(project, ['--scene', bad]);
-      expect(result.code).toBe(1);
-      expect(result.stderr).toContain('--scene');
-    }
-
-    // Never a full render, and never a usage error that still wrote output.
-    expect(fs.existsSync(path.join(project.dir, 'out.mp4'))).toBe(false);
-    expect(fs.readdirSync(path.join(project.dir, 'clips'))).toEqual([]);
-  }, 120_000);
-
-  it('rejects a scene index outside the storyboard', async () => {
-    const project = makeProject(fakeScenes(), { input: 'out of range' });
-
-    const result = await runWorker(project, ['--scene', '99']);
-    expect(result.code).toBe(1);
-    expect(result.stderr).toContain('outside scenes.json');
-    expect(fs.existsSync(path.join(project.dir, 'out.mp4'))).toBe(false);
-  }, 120_000);
-
   it('reports a missing storyboard rather than writing an empty video', async () => {
     const project = makeProject(fakeScenes(), { input: 'no scenes' });
     fs.rmSync(path.join(project.dir, 'scenes.json'));

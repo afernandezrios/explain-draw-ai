@@ -209,7 +209,6 @@ describe('GET /api/projects/[id]', () => {
     expect(data.sceneErrors).toEqual([]);
     expect(data.renderActive).toBe(false);
     expect(data.hasVideo).toBe(false);
-    expect(data.hasPreview).toBe(false);
   });
 
   it('reports a storyboard that does not validate instead of pretending it is fine', async () => {
@@ -389,7 +388,6 @@ describe('GET /api/projects/[id]/status', () => {
     expect(data.status).toBeNull();
     expect(data.renderActive).toBe(false);
     expect(data.hasVideo).toBe(false);
-    expect(data.hasPreview).toBe(false);
     expect(data.budget).toMatchObject({ ok: false });
   });
 

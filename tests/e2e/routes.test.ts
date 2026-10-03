@@ -2,9 +2,9 @@
  * The route layer, called directly.
  *
  * These are the decisions that live in the handlers and nowhere else: which
- * renders the budget window refuses, what a malformed scene index does, and how
- * video bytes are served. Route handlers are plain functions of (Request, ctx),
- * so they are called as such.
+ * renders the budget window refuses, what a body on /render does, and how video
+ * bytes are served. Route handlers are plain functions of (Request, ctx), so
+ * they are called as such.
  *
  * A live lock is written by hand in some cases. That is real state read by the
  * real code, and it is what keeps a test from spawning an actual browser
@@ -75,40 +75,12 @@ describe('POST /render', () => {
     expect(payload.error).toContain('6:30');
   });
 
-  it('does not apply the window to a single-scene preview', async () => {
-    const project = makeProject(overBudgetScenes(), { input: 'preview exemption' });
-
-    // A live lock, so an accepted request stops at BUSY rather than rendering.
-    writeLock(project.id, process.pid);
-
-    const response = await startRender(renderRequest({ sceneIndex: 0 }), ctx(project.id));
-    const payload = await body(response);
-
-    // BUSY is the proof: the request reached the lock, so the budget gate that
-    // refused the full render above did not refuse this one.
-    expect(payload.code).toBe('BUSY');
-    expect(response.status).toBe(409);
-  });
-
   it('lets an in-window full render through the budget gate', async () => {
     const project = makeProject(fullStoryboard(39), { input: 'in window' });
     writeLock(project.id, process.pid);
 
     const response = await startRender(renderRequest(), ctx(project.id));
     expect((await body(response)).code).toBe('BUSY');
-  });
-
-  it('rejects a present-but-malformed sceneIndex instead of rendering everything', async () => {
-    const project = makeProject(fakeScenes(), { input: 'bad scene index' });
-
-    for (const bad of [1.5, '2', -1, true, [0]]) {
-      const response = await startRender(renderRequest({ sceneIndex: bad }), ctx(project.id));
-      expect(response.status).toBe(400);
-      expect((await body(response)).code).toBe('BAD_SCENE_INDEX');
-    }
-
-    // No scene was rendered, and nothing was written.
-    expect(fs.readdirSync(path.join(project.dir, 'clips'))).toEqual([]);
   });
 
   it('rejects a body that is not JSON', async () => {
@@ -123,14 +95,15 @@ describe('POST /render', () => {
     expect((await body(response)).code).toBe('BAD_JSON');
   });
 
-  it('rejects JSON that is not an object instead of rendering everything', async () => {
-    const project = makeProject(fullStoryboard(39), { input: 'scalar body' });
+  it('refuses any non-empty body instead of rendering everything', async () => {
+    const project = makeProject(fullStoryboard(39), { input: 'non-empty body' });
     writeLock(project.id, process.pid);
 
-    // Every one of these parses as JSON and carries no sceneIndex. Read as
-    // "render everything" they would start a 273s full render from a caller's
-    // typo; they must be refused, and refused before the lock is consulted.
-    for (const raw of ['7', '"all"', 'true', 'null', '[0]', '[]']) {
+    // A stale caller still posting the old per-scene preview's
+    // `{"sceneIndex": 0}` must be told no rather than have its body ignored:
+    // ignoring it would start a 273s full render from what the caller meant as
+    // a preview. Every one of these is refused before the lock is consulted.
+    for (const raw of ['7', '"all"', 'true', 'null', '[0]', '[]', '{"sceneIndex": 0}']) {
       const request = new Request('http://localhost/api/projects/x/render', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -272,24 +245,6 @@ describe('GET /video', () => {
       expect(response.status).toBe(200);
       expect((await response.arrayBuffer()).byteLength).toBe(1000);
     }
-  });
-
-  it('serves the scene preview from the same route', async () => {
-    const project = makeProject(fakeScenes(), { input: 'preview video' });
-    putBytes(projectFiles(project.id).preview, 500, 9);
-
-    const response = await video(
-      new Request('http://localhost/v?kind=preview'),
-      ctx(project.id),
-    );
-    expect(response.status).toBe(200);
-    expect((await response.arrayBuffer()).byteLength).toBe(500);
-
-    // The joined video is a different file: asking for it here must not fall
-    // back to the preview.
-    const missingVideo = await video(new Request('http://localhost/v'), ctx(project.id));
-    expect(missingVideo.status).toBe(404);
-    expect((await body(missingVideo)).code).toBe('NO_VIDEO');
   });
 
   it('reports a project with no video', async () => {
