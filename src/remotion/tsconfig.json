@@ -11,7 +11,13 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
     "isolatedModules": true,
-    "types": []
+    "types": [],
+    "allowUmdGlobalAccess": true,
+    // The alias the copied RemotionUI sources import through, resolved from the
+    // repo root (no baseUrl: patterns are relative to this file).
+    "paths": {
+      "@/*": ["../../src/*"]
+    }
   },
   "include": ["./**/*.ts", "./**/*.tsx"]
 }

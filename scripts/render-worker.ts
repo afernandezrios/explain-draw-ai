@@ -38,6 +38,7 @@ import {
   selectComposition,
 } from '@remotion/renderer';
 import { readJsonFile, writeJsonAtomic } from '../src/lib/atomic.ts';
+import { webpackAliasOverride } from '../src/lib/bundle-config.ts';
 import {
   AUDIO_BITRATE,
   AUDIO_CODEC,
@@ -867,10 +868,13 @@ async function main(argv: string[]): Promise<number> {
     // exists is servable the moment its scene renders. On Windows the bundler
     // copies instead, so each post-bundle WAV is copied into the served
     // directory before its scene draws (`publishNarration`).
+    // The RemotionUI sources import through `@/*`; webpack does not read
+    // tsconfig `paths`, so the alias is handed over explicitly.
     const serveUrl = await bundle({
       entryPoint: ENTRY_POINT,
       publicDir: narrationDir,
       symlinkPublicDir: process.platform !== 'win32',
+      webpackOverride: webpackAliasOverride(PROJECT_ROOT),
     });
     abortIfCancelled('bundling');
 
