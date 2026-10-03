@@ -3,13 +3,14 @@
 /**
  * The whole app, on one page.
  *
- * One shell, three artifact panes, one banner zone and one render footer —
- * toolbar on top, sidebar on the left, one pane visible at a time. The panes run
- * in the order the pipeline does: paste, edit the script, render. While a job
- * runs, the controls that would edit what the worker holds are disabled, because
- * there is exactly one render at a time and the worker has its own copy of the
- * scenes. Input's Generate is not one of them: it creates a new project folder
- * and never touches the open project, so a running render never refuses it.
+ * The control room: a toolbar, one banner zone, and three sections that are all
+ * visible at once -- Brief and Script stacked in the left column, Take (with
+ * its viewfinder HUD) on the right. The sections run in the order the pipeline
+ * does: paste, edit the script, render. While a job runs, the controls that
+ * would edit what the worker holds are disabled, because there is exactly one
+ * render at a time and the worker has its own copy of the scenes. Brief's
+ * Generate is not one of them: it creates a new project folder and never
+ * touches the open project, so a running render never refuses it.
  *
  * The page never imports the schema module. It only takes types from it, so zod
  * stays out of the browser bundle, and every budget string it prints was
@@ -47,16 +48,14 @@ type StatusData = {
   budget: BudgetCheck | null;
 };
 
-/** The three artifact panes. Every one of them is always reachable. */
-type Pane = 'input' | 'script' | 'video';
+/** The three sections of the control room. All of them are always on screen. */
+type SectionId = 'brief' | 'script' | 'take';
 
-const PANE_LABELS: Record<Pane, string> = {
-  input: 'Input',
+const SECTION_LABELS: Record<SectionId, string> = {
+  brief: 'Brief',
   script: 'Script',
-  video: 'Video',
+  take: 'Take',
 };
-
-const PANES: readonly Pane[] = ['input', 'script', 'video'];
 
 /** A message in the banner zone: what it says, where it came from, and how to hide it. */
 type Message = {
@@ -64,7 +63,7 @@ type Message = {
   severity: 'failure' | 'info';
   body: ReactNode;
   details?: string[];
-  origin: Pane;
+  origin: SectionId;
   actions?: ReactNode;
   /** When it happened, for the source row's age. Omitted when nothing knows. */
   at?: number;
@@ -146,12 +145,23 @@ function formatElapsed(ms: number): string {
   return minutes > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${seconds}s`;
 }
 
+/** The viewfinder clock: m:ss, or h:mm:ss past an hour. Monospace tabular. */
+function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = total % 60;
+  const mm = String(minutes).padStart(2, '0');
+  const ss = String(seconds).padStart(2, '0');
+  return hours > 0 ? `${hours}:${mm}:${ss}` : `${mm}:${ss}`;
+}
+
 /** "just now" under a minute, then the elapsed shape. */
 function formatAge(ms: number): string {
   return ms < 60_000 ? 'just now' : `${formatElapsed(ms)} ago`;
 }
 
-/** The sidebar's `8 ¶`: one paragraph per blank-line-separated block. */
+/** The Script section's `8 ¶`: one paragraph per blank-line-separated block. */
 function paragraphCount(text: string): number {
   return text.split(/\n\s*\n/).filter((block) => block.trim() !== '').length;
 }
@@ -202,31 +212,6 @@ function useNow(intervalMs: number | null): number {
 
 /* ─────────────────────────────── icons ──────────────────────────── */
 
-/** The nav icons: 16px and currentColor, so the active item's accent reaches them. */
-function PaneIcon({ pane }: { pane: Pane }) {
-  if (pane === 'input') {
-    return (
-      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M13.1 3.7l3.2 3.2-8.3 8.3-4.1.9.9-4.1z" />
-        <path d="M11.3 5.5l3.2 3.2" />
-      </svg>
-    );
-  }
-  if (pane === 'script') {
-    return (
-      <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-        <path d="M4.5 5.5h7M4.5 9.5h11M4.5 13.5h11M4.5 17h7" />
-      </svg>
-    );
-  }
-  return (
-    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
-      <rect x="2.8" y="4.4" width="14.4" height="11.2" rx="2.6" />
-      <path d="M8.6 7.9l4.1 2.1-4.1 2.1z" />
-    </svg>
-  );
-}
-
 function CheckIcon() {
   return (
     <svg width="11" height="11" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -255,8 +240,8 @@ function CloseIcon({ size = 11 }: { size?: number }) {
 
 /**
  * The worker's output for a failed render, collapsed behind its own button. It
- * lives in Video's pane foot, and it owns its `open` state, so a new render or
- * project resets it by unmounting.
+ * lives in the Take section's foot, and it owns its `open` state, so a new
+ * render or project resets it by unmounting.
  */
 function RenderLogTail({ lines }: { lines: string[] | null }) {
   const [open, setOpen] = useState(false);
@@ -281,7 +266,7 @@ function RenderLogTail({ lines }: { lines: string[] | null }) {
 /** A readout line: values in ink at 600, separated by the mid-dot. */
 function Readout({ parts }: { parts: ReactNode[] }) {
   return (
-    <p className="pane-foot-meta">
+    <p className="section-foot-meta">
       {parts.map((part, index) => (
         <span key={index}>
           {index > 0 && <span className="sep"> · </span>}
@@ -289,6 +274,62 @@ function Readout({ parts }: { parts: ReactNode[] }) {
         </span>
       ))}
     </p>
+  );
+}
+
+/**
+ * The Take column's viewfinder line -- the one place the render's own state is
+ * read out. While a job runs the dot pulses, REC sits beside it, and the clock
+ * ticks; at rest the same line carries the last outcome, dismissible, or just
+ * "Idle". It is never announced on a timer: the progress bar's value and the
+ * visible text are the state a screen reader reads.
+ */
+function Hud({
+  running,
+  text,
+  clock,
+  cancelling,
+  onCancel,
+  onDismiss,
+}: {
+  running: boolean;
+  text: string;
+  clock: string;
+  cancelling: boolean;
+  onCancel: () => void;
+  onDismiss: (() => void) | null;
+}) {
+  return (
+    <div className={`hud${running ? ' is-live' : ''}`}>
+      <i className={`rec-dot${running ? ' is-live' : ''}`} aria-hidden="true" />
+      {running && <span className="hud-label">REC</span>}
+      <span className="hud-text" title={text}>
+        {text}
+      </span>
+      {running ? (
+        <>
+          <span className="hud-clock">{clock}</span>
+          <button
+            className="button-cancel"
+            aria-label="Cancel render"
+            onClick={onCancel}
+            disabled={cancelling}
+          >
+            {cancelling ? 'Cancelling...' : 'Cancel'}
+          </button>
+        </>
+      ) : (
+        onDismiss !== null && (
+          <button
+            className="button-dismiss"
+            aria-label="Dismiss render status"
+            onClick={onDismiss}
+          >
+            <CloseIcon size={10} />
+          </button>
+        )
+      )}
+    </div>
   );
 }
 
@@ -306,14 +347,15 @@ export default function HomePage() {
   const [renderActive, setRenderActive] = useState(false);
   const [hasVideo, setHasVideo] = useState(false);
 
-  /** Which pane is in front. Free navigation: every pane is always reachable. */
-  const [pane, setPane] = useState<Pane>('input');
+  /** The section an action just asked to bring forward, and a nonce so asking
+   *  twice in a row re-triggers the flash. Cleared by the effect below. */
+  const [flash, setFlash] = useState<{ id: SectionId; n: number } | null>(null);
 
   const [error, setError] = useState<ApiError | null>(null);
-  const [errorOrigin, setErrorOrigin] = useState<Pane>('input');
+  const [errorOrigin, setErrorOrigin] = useState<SectionId>('brief');
   const [errorAt, setErrorAt] = useState(0);
   const [notice, setNotice] = useState<string | null>(null);
-  const [noticeOrigin, setNoticeOrigin] = useState<Pane>('input');
+  const [noticeOrigin, setNoticeOrigin] = useState<SectionId>('brief');
   const [noticeAt, setNoticeAt] = useState(0);
   /** Messages the reader has dismissed, by key. Cleared when the project changes. */
   const [dismissed, setDismissed] = useState<string[]>([]);
@@ -335,27 +377,46 @@ export default function HomePage() {
   const [mediaNonce, setMediaNonce] = useState(0);
 
   const jobStartedAtRef = useRef<number | null>(null);
-  /** Which project the panel is showing, so a reload of it keeps dismissals. */
+  /** Which project the page is showing, so a reload of it keeps dismissals. */
   const openProjectRef = useRef<string | null>(null);
   /**
    * Bumped by "New project". Anything already in flight captured the older
-   * value, so it can tell that the pane was cleared under it and drop its
+   * value, so it can tell that the page was cleared under it and drop its
    * answer rather than restore the project the reader just left.
    */
   const epochRef = useRef(0);
 
-  /** Every failure names the pane it came from and when it arrived. */
-  const showError = useCallback((next: ApiError, origin: Pane) => {
+  /** Every failure names the section it came from and when it arrived. */
+  const showError = useCallback((next: ApiError, origin: SectionId) => {
     setError(next);
     setErrorOrigin(origin);
     setErrorAt(Date.now());
   }, []);
 
-  const showNotice = useCallback((text: string, origin: Pane) => {
+  const showNotice = useCallback((text: string, origin: SectionId) => {
     setNotice(text);
     setNoticeOrigin(origin);
     setNoticeAt(Date.now());
   }, []);
+
+  /**
+   * Bring a section into view and flash its frame. The scroll happens in the
+   * effect so it runs after the DOM has taken whatever change prompted it (a
+   * generate swaps Brief into record mode and fills Script, both of which move
+   * the target); smoothness comes from the stylesheet's scroll-behavior.
+   */
+  const scrollToSection = useCallback((id: SectionId) => {
+    setFlash({ id, n: Date.now() });
+  }, []);
+
+  useEffect(() => {
+    if (flash === null) {
+      return;
+    }
+    document.getElementById(`section-${flash.id}`)?.scrollIntoView({ block: 'start' });
+    const timer = setTimeout(() => setFlash(null), 1300);
+    return () => clearTimeout(timer);
+  }, [flash]);
 
   const applyProject = useCallback((data: ProjectData) => {
     if (openProjectRef.current !== data.projectId) {
@@ -407,7 +468,7 @@ export default function HomePage() {
           return;
         }
         if (!ok) {
-          showError(readError(data), 'input');
+          showError(readError(data), 'brief');
           return;
         }
         applyProject(data as ProjectData);
@@ -423,7 +484,7 @@ export default function HomePage() {
         }
         showError(
           { error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' },
-          'input',
+          'brief',
         );
       }
     },
@@ -448,7 +509,7 @@ export default function HomePage() {
     try {
       const { ok, data } = await sendJson('/api/projects', 'POST', { input });
       if (!ok) {
-        showError(readError(data), 'input');
+        showError(readError(data), 'brief');
         return;
       }
       const created = data as {
@@ -477,13 +538,13 @@ export default function HomePage() {
         `Storyboard ready: ${created.scenes.length} scenes${metaSuffix(created.meta)}. Check the script, then render.`,
         'script',
       );
-      // The generate's own advance: Script is the cheapest thing to fix, and it
-      // gates everything downstream.
-      setPane('script');
+      // The generate's own advance: bring Script forward -- it is the cheapest
+      // thing to fix, and it gates everything downstream.
+      scrollToSection('script');
     } catch (thrown) {
       showError(
         { error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' },
-        'input',
+        'brief',
       );
     } finally {
       setGenerating(false);
@@ -492,7 +553,7 @@ export default function HomePage() {
 
   /* ────────────────────── input, script, storyboard ───────────────── */
 
-  /** The Input pane's own action once a project exists: a new project, nothing deleted. */
+  /** The Brief section's own action once a project exists: a new project, nothing deleted. */
   const startNewProject = useCallback(() => {
     openProjectRef.current = null;
     // Anything in flight from the old project is now stale; this state is the
@@ -514,7 +575,7 @@ export default function HomePage() {
     setNotice(null);
     setDismissed([]);
     setJobDismissed(false);
-    setPane('input');
+    scrollToSection('brief');
     window.history.replaceState(null, '', '/');
   }, []);
 
@@ -569,7 +630,7 @@ export default function HomePage() {
       const { ok, data } = await sendJson(`/api/projects/${projectId}/script`, 'POST');
       if (epoch !== epochRef.current) {
         // Left behind while the rebuild ran: its storyboard belongs to the
-        // project the reader closed, not to the empty pane in front of them.
+        // project the reader closed, not to the empty page in front of them.
         return;
       }
       if (!ok) {
@@ -618,11 +679,11 @@ export default function HomePage() {
       const { ok, data } = await sendJson(`/api/projects/${projectId}/render`, 'POST');
       if (epoch !== epochRef.current) {
         // The project was left while the worker was being started: its status
-        // is not this pane's to show.
+        // is not this page's to show.
         return;
       }
       if (!ok) {
-        showError(readError(data), 'video');
+        showError(readError(data), 'take');
         return;
       }
       setRenderActive(true);
@@ -644,7 +705,7 @@ export default function HomePage() {
       }
       showError(
         { error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' },
-        'video',
+        'take',
       );
     } finally {
       setStarting(false);
@@ -659,7 +720,7 @@ export default function HomePage() {
     try {
       const { ok, data } = await sendJson(`/api/projects/${projectId}/cancel`, 'POST');
       if (!ok) {
-        showError(readError(data), 'video');
+        showError(readError(data), 'take');
       }
       // Only a cancel that actually signalled a worker keeps the button held: a
       // refused or empty answer means the render is still running (or already
@@ -673,7 +734,7 @@ export default function HomePage() {
       // for it, or a cancel that never reached the server is unrecoverable.
       showError(
         { error: thrown instanceof Error ? thrown.message : String(thrown), code: 'NETWORK' },
-        'video',
+        'take',
       );
       setCancelling(false);
     }
@@ -774,18 +835,18 @@ export default function HomePage() {
   const percent = Math.round(progress * 100);
   const hasProject = projectId !== null;
   // A project always shows its input as the record, even with nothing stored in
-  // it: `readInput` returns null for a missing file, and a pane that fell back to
-  // the empty field would offer a Generate that forks a second project folder.
+  // it: `readInput` returns null for a missing file, and a section that fell back
+  // to the empty field would offer a Generate that forks a second project folder.
   const recordMode = hasProject;
   const paragraphs = script ? paragraphCount(script.text) : 0;
   const resting = status !== null && isTerminal(status.state);
   /**
-   * What the Video pane is about: the finished file, or a storyboard a render
-   * could make one from. The pane's foot reads this, so a project whose
+   * What the Take section is about: the finished file, or a storyboard a render
+   * could make one from. The section's foot reads this, so a project whose
    * scenes.json is unreadable cannot show its finished video above a claim that
    * nothing has been rendered.
    */
-  const videoPaneProduced = hasProject && (hasVideo || scenes.length > 0);
+  const takeProduced = hasProject && (hasVideo || scenes.length > 0);
 
   // One clock for every age on screen: a second while a job runs, half a minute
   // while a resting outcome, a failure or a notice is still being shown, and
@@ -796,14 +857,23 @@ export default function HomePage() {
 
   const restingOutcome = resting ? lastOutcomeLine(status, now) : '';
 
-  /** The nav's right-aligned counts: each artifact's own measure, absent while
-   *  that artifact is unproduced. Video's is a presence mark, never a duration --
-   *  the payload carries no length. */
-  const navStates: Record<Pane, ReactNode | null> = {
-    input: hasProject && input.length > 0 ? `${input.length.toLocaleString()} ch` : null,
-    script: hasProject && paragraphs > 0 ? `${paragraphs} ¶` : null,
-    video: hasProject && hasVideo ? <CheckIcon /> : null,
-  };
+  /**
+   * The HUD's line: the running scene while a job runs, else the last outcome,
+   * else just Idle. The job bar below 1100px mirrors it, so it never falls off
+   * screen mid-render.
+   */
+  const hudText = running
+    ? runningScene
+      ? `${Math.min((status?.sceneIndex ?? 0) + 1, status?.totalScenes || 1)}/${
+          status?.totalScenes || scenes.length
+        } · ${runningScene.title}`
+      : (status?.message ?? 'Starting...')
+    : restingOutcome !== ''
+      ? restingOutcome
+      : 'Idle';
+  const hudClock = running
+    ? formatClock(Math.max(0, now - (status?.startedAt ?? now)))
+    : '';
 
   const messages: Message[] = [];
   if (error) {
@@ -838,7 +908,7 @@ export default function HomePage() {
       key: `budget:${budget.label}`,
       severity: 'failure',
       body: `${budget.label} A full render is refused until the storyboard is inside the window.`,
-      origin: 'video',
+      origin: 'take',
     });
   }
   if (sceneErrors.length > 0) {
@@ -847,7 +917,7 @@ export default function HomePage() {
       severity: 'failure',
       body: 'The stored storyboard does not match the scene format, so nothing can be rendered.',
       details: sceneErrors,
-      origin: 'video',
+      origin: 'take',
     });
   }
   if (workerGone !== null) {
@@ -855,7 +925,7 @@ export default function HomePage() {
       key: `workerGone:${workerGone}`,
       severity: 'failure',
       body: 'The render worker is no longer running and never reported an outcome. Check the terminal you started the server in. Finished scene clips are kept in the project folder.',
-      origin: 'video',
+      origin: 'take',
     });
   }
   if (status !== null && status.state === 'failed') {
@@ -863,18 +933,18 @@ export default function HomePage() {
       key: `renderFailed:${status.startedAt}`,
       severity: 'failure',
       body: `Render failed: ${status.message ?? 'see the terminal for details'}`,
-      origin: 'video',
+      origin: 'take',
       at: status.finishedAt ?? status.updatedAt,
     });
   }
-  // Dismissals first: a hidden message must not stand in for the pane it is no
-  // longer speaking for.
+  // Dismissals first: a hidden message must not stand in for the section it is
+  // no longer speaking for.
   const undismissed = messages.filter((message) => !dismissed.includes(message.key));
-  // Then one message per pane: the banner names a single origin for each thing
-  // it says, so a second message about the same pane would point at the same
-  // link. A failure outranks a notice -- "Script updated" below a save that
-  // failed is worse than saying only the failure.
-  const byOrigin = new Map<Pane, Message>();
+  // Then one message per section: the banner names a single origin for each
+  // thing it says, so a second message about the same section would point at
+  // the same link. A failure outranks a notice -- "Script updated" below a save
+  // that failed is worse than saying only the failure.
+  const byOrigin = new Map<SectionId, Message>();
   for (const message of undismissed) {
     const shown = byOrigin.get(message.origin);
     if (shown === undefined || (shown.severity === 'info' && message.severity === 'failure')) {
@@ -887,77 +957,11 @@ export default function HomePage() {
     setDismissed((current) => (current.includes(key) ? current : [...current, key]));
   };
 
-  /* ───────────────────────────── the footer ──────────────────────── */
+  /* ────────────────────────── the section bodies ─────────────────── */
 
-  const jobCard = (
-    <div className="job-card">
-      <div className="job-head">
-        <i className={running ? 'is-live' : ''} />
-        <span className="job-title">
-          {running ? (status?.message ?? 'Starting...') : 'No render running'}
-        </span>
-        {!running && restingOutcome !== '' && !jobDismissed && (
-          <button
-            className="button-dismiss"
-            aria-label="Dismiss render status"
-            onClick={() => setJobDismissed(true)}
-          >
-            <CloseIcon size={10} />
-          </button>
-        )}
-      </div>
-
-      {running ? (
-        <>
-          <div className="progress-bar-row">
-            <div
-              className="progress-bar"
-              role="progressbar"
-              aria-label="Render progress"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={percent}
-            >
-              <i style={{ width: `${percent}%` }} />
-            </div>
-            <span className="progress-number">{percent}%</span>
-          </div>
-          <div className="job-line">
-            <span>
-              {runningScene
-                ? `${runningScene.title} · ${runningScene.durationSeconds}s`
-                : `${Math.min((status?.sceneIndex ?? 0) + 1, status?.totalScenes || 1)} of ${
-                    status?.totalScenes || scenes.length
-                  }`}
-            </span>
-            <span className="right">
-              {formatElapsed(Math.max(0, now - (status?.startedAt ?? now)))}
-            </span>
-          </div>
-          <button
-            className="button-cancel"
-            onClick={() => void cancelRender()}
-            disabled={cancelling}
-          >
-            <CloseIcon />
-            {cancelling ? 'Cancelling...' : 'Cancel render'}
-          </button>
-        </>
-      ) : (
-        restingOutcome !== '' &&
-        !jobDismissed && <p className="job-detail">{restingOutcome}</p>
-      )}
-    </div>
-  );
-
-  /* ──────────────────────────── the panes ────────────────────────── */
-
-  const inputPane = (
+  const briefBody = (
     <>
-      <div className="pane-head">
-        <h1 className="pane-title">Input</h1>
-      </div>
-      <div className="pane-body">
+      <div className="section-body">
         {recordMode ? (
           <>
             <div className="input-record">
@@ -986,7 +990,7 @@ export default function HomePage() {
                 </button>
                 <p className="control-note">
                   <b>Leaves this project behind.</b> Nothing is deleted — the script and video stay
-                  in the project folder — but the pane starts again from an empty input.
+                  in the project folder — but the page starts again from an empty Brief.
                 </p>
               </div>
             </div>
@@ -1010,17 +1014,17 @@ export default function HomePage() {
               </span>
             </div>
             <p className="empty-note">
-              <b>First run.</b> Generating creates the project. Script and Video are already listed
-              in the sidebar; they stay empty until they are produced.
+              <b>First run.</b> Generating creates the project. Script and Take fill in as their
+              artifacts are produced.
             </p>
           </>
         )}
       </div>
-      <div className="pane-foot">
-        <div className="pane-foot-controls">
-          {/* Generate is never refused by a running render: it creates a new
-              project folder and never touches the open one. */}
-          {!recordMode && (
+      {/* Generate is never refused by a running render: it creates a new
+          project folder and never touches the open one. */}
+      {!recordMode && (
+        <div className="section-foot">
+          <div className="section-foot-controls">
             <button
               className="button primary lg"
               onClick={() => void generate()}
@@ -1028,20 +1032,16 @@ export default function HomePage() {
             >
               {generating ? 'Generating...' : 'Generate storyboard'}
             </button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </>
   );
 
-  const scriptPane =
+  const scriptBody =
     script && hasProject ? (
       <>
-        <div className="pane-head">
-          <h1 className="pane-title">Script</h1>
-          {paragraphs > 0 && <span className="pane-subtitle">{paragraphs} paragraphs</span>}
-        </div>
-        <div className="pane-body">
+        <div className="section-body">
           <label className="field-label" htmlFor="script-title">
             Video title
           </label>
@@ -1068,7 +1068,7 @@ export default function HomePage() {
             aria-label="Script text"
           />
         </div>
-        <div className="pane-foot">
+        <div className="section-foot">
           <Readout
             parts={[
               `${paragraphs} paragraphs`,
@@ -1076,7 +1076,7 @@ export default function HomePage() {
               ...(scriptDirty ? ['Unsaved changes'] : []),
             ]}
           />
-          <div className="pane-foot-controls">
+          <div className="section-foot-controls">
             <button
               className="button primary lg"
               onClick={() =>
@@ -1109,10 +1109,7 @@ export default function HomePage() {
       </>
     ) : (
       <>
-        <div className="pane-head">
-          <h1 className="pane-title">Script</h1>
-        </div>
-        <div className="pane-body">
+        <div className="section-body">
           <div className="ghost-paragraphs" aria-hidden="true">
             {[0, 1, 2].map((block) => (
               <div className="ghost-para" key={block}>
@@ -1123,13 +1120,13 @@ export default function HomePage() {
             ))}
           </div>
         </div>
-        <div className="pane-foot">
+        <div className="section-foot">
           <div className="ghost-note">
             <p>
-              <b>Nothing written yet.</b> The script comes from the topic you paste in Input.
+              <b>Nothing written yet.</b> The script comes from the topic you paste in Brief.
             </p>
-            <button className="button sm" onClick={() => setPane('input')}>
-              Go to Input
+            <button className="button sm" onClick={() => scrollToSection('brief')}>
+              Go to Brief
               <ChevronIcon direction="right" />
             </button>
           </div>
@@ -1137,20 +1134,19 @@ export default function HomePage() {
       </>
     );
 
-  const videoPane = (
+  const takeBody = (
     <>
-      <div className="pane-head">
-        <h1 className="pane-title">Video</h1>
-      </div>
       {hasVideo && hasProject ? (
-        <div className="video-mat">
-          <video
-            key={`video-${mediaNonce}`}
-            src={`/api/projects/${projectId}/video?v=${mediaNonce}`}
-            controls
-            playsInline
-            aria-label="Finished video"
-          />
+        <>
+          <div className="video-mat">
+            <video
+              key={`video-${mediaNonce}`}
+              src={`/api/projects/${projectId}/video?v=${mediaNonce}`}
+              controls
+              playsInline
+              aria-label="Finished video"
+            />
+          </div>
           <div className="video-actions">
             <a className="button sm" href={`/api/projects/${projectId}/video`} download="out.mp4">
               Download out.mp4
@@ -1159,7 +1155,7 @@ export default function HomePage() {
               Also at <code>projects/{projectId}/out.mp4</code>
             </span>
           </div>
-        </div>
+        </>
       ) : (
         <div className="ghost-timeline" aria-hidden="true">
           {[3, 6, 4, 8, 5, 7, 4].map((weight, index) => (
@@ -1167,27 +1163,27 @@ export default function HomePage() {
           ))}
         </div>
       )}
-      <div className="pane-foot">
+      <div className="section-foot">
         {/* The worker-log tail stays here, collapsed, until Diagnostics takes it over. */}
         {renderLog !== null && <RenderLogTail lines={renderLog} />}
-        {videoPaneProduced ? (
-          <div className="pane-foot-controls">
+        {takeProduced ? (
+          <div className="section-foot-controls">
             <button
               className="button primary lg"
               onClick={() => void startRender()}
               disabled={running || starting || budgetBlocksRender || scenes.length === 0}
             >
-              Render
+              {starting ? 'Starting...' : 'Render video'}
             </button>
           </div>
         ) : (
           <div className="ghost-note">
             <p>
-              <b>Nothing rendered yet.</b> Rendering needs a storyboard, and a storyboard starts
-              with a topic in Input.
+              <b>No take yet.</b> A take needs a storyboard, and a storyboard starts with a topic
+              in Brief.
             </p>
-            <button className="button sm" onClick={() => setPane('input')}>
-              Go to Input
+            <button className="button sm" onClick={() => scrollToSection('brief')}>
+              Go to Brief
               <ChevronIcon direction="right" />
             </button>
           </div>
@@ -1196,127 +1192,194 @@ export default function HomePage() {
     </>
   );
 
+  /* ──────────────────────────── the sections ─────────────────────── */
+
+  const briefSection = (
+    <section
+      id="section-brief"
+      className={`section${flash?.id === 'brief' ? ' is-flash' : ''}`}
+    >
+      <div className="section-head">
+        <span className="section-index">1</span>
+        <h2 className="section-title">Brief</h2>
+        {hasProject && input.length > 0 && (
+          <span className="section-count">{input.length.toLocaleString()} ch</span>
+        )}
+      </div>
+      {briefBody}
+    </section>
+  );
+
+  const scriptSection = (
+    <section
+      id="section-script"
+      className={`section${flash?.id === 'script' ? ' is-flash' : ''}`}
+    >
+      <div className="section-head">
+        <span className="section-index">2</span>
+        <h2 className="section-title">Script</h2>
+        {hasProject && paragraphs > 0 && <span className="section-count">{paragraphs} ¶</span>}
+      </div>
+      {scriptBody}
+    </section>
+  );
+
+  const takeSection = (
+    <section
+      id="section-take"
+      className={`section${flash?.id === 'take' ? ' is-flash' : ''}`}
+    >
+      <div className="section-head">
+        <span className="section-index">3</span>
+        <h2 className="section-title">Take</h2>
+        {hasProject && hasVideo && (
+          <span className="section-count" role="img" aria-label="A take exists">
+            <CheckIcon />
+          </span>
+        )}
+      </div>
+      <Hud
+        running={running}
+        text={hudText}
+        clock={hudClock}
+        cancelling={cancelling}
+        onCancel={() => void cancelRender()}
+        onDismiss={restingOutcome !== '' && !jobDismissed ? () => setJobDismissed(true) : null}
+      />
+      {running && (
+        <div className="progress-row">
+          <div
+            className="progress-bar"
+            role="progressbar"
+            aria-label="Render progress"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+          >
+            <i style={{ width: `${percent}%` }} />
+          </div>
+          <span className="progress-number">{percent}%</span>
+        </div>
+      )}
+      {takeBody}
+    </section>
+  );
+
   /* ─────────────────────────────── view ──────────────────────────── */
 
   return (
-    <div className="shell">
+    <div className={`shell${running ? ' is-rendering' : ''}`}>
       <header className="toolbar">
-        <span className="app-title">Explain-Draw AI</span>
+        <i className="app-mark" aria-hidden="true" />
+        <h1 className="app-title">Explain-Draw AI</h1>
         {script && hasProject && <span className="project-crumb">{script.title}</span>}
-        <span className="render-status-pill">
-          <i className={running ? 'is-live' : ''} />
-          {running ? 'Rendering' : 'Idle'}
-        </span>
+        {projectId !== null && <span className="project-id">{projectId}</span>}
       </header>
 
-      <div className="shell-body">
-        <aside className="sidebar">
-          {script && hasProject && (
-            <div className="sidebar-project">
-              <h2>{script.title}</h2>
-            </div>
-          )}
-
-          <p className="nav-label">Project</p>
-          <nav className="nav">
-            {PANES.map((item) => (
-              <button
-                key={item}
-                className={`nav-item${pane === item ? ' is-active' : ''}`}
-                onClick={() => setPane(item)}
-                aria-current={pane === item ? 'page' : undefined}
+      <main className="workspace">
+        {visibleMessages.length > 0 && (
+          <div className="banner-zone">
+            {visibleMessages.map((message) => (
+              <div
+                key={message.key}
+                className={`message${message.severity === 'info' ? ' is-info' : ''}`}
+                role={message.severity === 'failure' ? 'alert' : 'status'}
               >
-                <PaneIcon pane={item} />
-                {PANE_LABELS[item]}
-                {navStates[item] !== null && (
-                  <span className="nav-item-state">{navStates[item]}</span>
-                )}
-              </button>
-            ))}
-          </nav>
-
-          <div className="sidebar-foot">{jobCard}</div>
-        </aside>
-
-        <main className="pane">
-          <div className="pane-inner">
-            {visibleMessages.length > 0 && (
-              <div className="banner-zone">
-                {visibleMessages.map((message) => (
-                  <div
-                    key={message.key}
-                    className={`message${message.severity === 'info' ? ' is-info' : ''}`}
-                    role={message.severity === 'failure' ? 'alert' : 'status'}
-                  >
-                    <svg
-                      className="message-icon"
-                      viewBox="0 0 20 20"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="1.7"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      aria-hidden="true"
-                    >
-                      {message.severity === 'failure' ? (
-                        <>
-                          <path d="M10 2.6L18.4 17.4H1.6z" />
-                          <path d="M10 7.6v4.2M10 14.4v.6" />
-                        </>
-                      ) : (
-                        <>
-                          <circle cx="10" cy="10" r="7.4" />
-                          <path d="M10 9v4.4M10 6.4v.6" />
-                        </>
-                      )}
-                    </svg>
-                    <div className="message-body">
-                      <p>{message.body}</p>
-                      {/* Any failure that carries per-field detail shows it: the
-                          model's bad storyboard (INVALID_LLM_JSON) and the
-                          stored one (INVALID_SCENES) are the same list. */}
-                      {message.details && message.details.length > 0 && (
-                        <ul>
-                          {message.details.map((detail) => (
-                            <li key={detail}>{detail}</li>
-                          ))}
-                        </ul>
-                      )}
-                      <div className="message-source">
-                        From{' '}
-                        <button className="link" onClick={() => setPane(message.origin)}>
-                          {PANE_LABELS[message.origin]}
-                          <ChevronIcon direction="right" />
-                        </button>
-                        {message.at !== undefined && (
-                          <span>
-                            · {message.severity === 'failure' ? 'failed' : 'sent'}{' '}
-                            {formatAge(Math.max(0, now - message.at))}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="message-actions">
-                      {message.actions}
-                      <button
-                        className="button-dismiss"
-                        aria-label="Dismiss message"
-                        onClick={() => dismiss(message.key)}
-                      >
-                        <CloseIcon size={10} />
-                      </button>
-                    </div>
+                <svg
+                  className="message-icon"
+                  viewBox="0 0 20 20"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.7"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  aria-hidden="true"
+                >
+                  {message.severity === 'failure' ? (
+                    <>
+                      <path d="M10 2.6L18.4 17.4H1.6z" />
+                      <path d="M10 7.6v4.2M10 14.4v.6" />
+                    </>
+                  ) : (
+                    <>
+                      <circle cx="10" cy="10" r="7.4" />
+                      <path d="M10 9v4.4M10 6.4v.6" />
+                    </>
+                  )}
+                </svg>
+                <div className="message-body">
+                  <p>{message.body}</p>
+                  {/* Any failure that carries per-field detail shows it: the
+                      model's bad storyboard (INVALID_LLM_JSON) and the
+                      stored one (INVALID_SCENES) are the same list. */}
+                  {message.details && message.details.length > 0 && (
+                    <ul>
+                      {message.details.map((detail) => (
+                        <li key={detail}>{detail}</li>
+                      ))}
+                    </ul>
+                  )}
+                  <div className="message-source">
+                    From{' '}
+                    <button className="link" onClick={() => scrollToSection(message.origin)}>
+                      {SECTION_LABELS[message.origin]}
+                      <ChevronIcon direction="right" />
+                    </button>
+                    {message.at !== undefined && (
+                      <span>
+                        · {message.severity === 'failure' ? 'failed' : 'sent'}{' '}
+                        {formatAge(Math.max(0, now - message.at))}
+                      </span>
+                    )}
                   </div>
-                ))}
+                </div>
+                <div className="message-actions">
+                  {message.actions}
+                  <button
+                    className="button-dismiss"
+                    aria-label="Dismiss message"
+                    onClick={() => dismiss(message.key)}
+                  >
+                    <CloseIcon size={10} />
+                  </button>
+                </div>
               </div>
-            )}
-
-            {pane === 'input' && inputPane}
-            {pane === 'script' && scriptPane}
-            {pane === 'video' && videoPane}
+            ))}
           </div>
-        </main>
-      </div>
+        )}
+
+        <div className="shell-body">
+          <div className="column-left">
+            {briefSection}
+            {scriptSection}
+          </div>
+          <div className="column-right">{takeSection}</div>
+        </div>
+      </main>
+
+      {/* Below 1100px Take can be scrolled off screen mid-render, so the same
+          readout sits in a fixed bar at the bottom of the window. Above that
+          width the HUD inside the Take section is always in view. */}
+      {running && (
+        <div className="job-bar">
+          <i className="rec-dot is-live" aria-hidden="true" />
+          <span className="job-bar-text">{hudText}</span>
+          {/* Presentational mirror: the HUD's progressbar is the one the
+              accessibility tree reads, even when it is scrolled out of view. */}
+          <div className="progress-bar job-bar-progress" aria-hidden="true">
+            <i style={{ width: `${percent}%` }} />
+          </div>
+          <span className="job-bar-clock">{hudClock}</span>
+          <button
+            className="button-cancel"
+            aria-label="Cancel render"
+            onClick={() => void cancelRender()}
+            disabled={cancelling}
+          >
+            {cancelling ? 'Cancelling...' : 'Cancel'}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

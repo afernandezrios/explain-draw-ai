@@ -1,143 +1,134 @@
 /*
- * Quartz -- the app's single stylesheet.
+ * Studio -- the app's single stylesheet.
  *
- * The values are literal, not deltas: there is no UI framework and no web font,
- * so this file is the whole visual contract, hand-rolled against
- * _bmad-output/planning-artifacts/ux-designs/ux-explain-draw-ai-2026-09-17/DESIGN.md
- * (and its EXPERIENCE.md for behaviour). Where the approved shell disagrees with
- * the two spines, the spines win.
+ * The control room at night: matte charcoal surfaces in four steps, hairline
+ * frames around each artifact of the pipeline (Brief, Script, Take), one
+ * signal red -- the recording lamp -- and monospace reserved for the Take
+ * column's viewfinder readouts. Three rules the file is built to protect:
  *
- * Two rules the file is built to protect:
- *   - Chrome is the system UI face everywhere; the page loads no font of its
- *     own.
- *   - A resting card separates by fill (paper on a tinted pane), never by
- *     shadow. Exactly one object in a pane is elevated: the mat.
+ *   - Exactly one animation runs in this app: the recording dot's pulse while
+ *     a render is live. Everything else that moves answers a click (a scroll,
+ *     a progress fill) and stops under prefers-reduced-motion.
+ *   - Elevation is told by fill, never by shadow: a resting card is one step
+ *     lighter than the panel it sits on. Nothing in this file casts a shadow
+ *     except the attention flash on a section you asked to see.
+ *   - The faces come from next/font (layout.tsx) as --font-ui / --font-mono on
+ *     <html>; the stacks below only carry the system fallback.
+ *
+ * The responsive shape: a two-column control room at >=1100px (Brief and
+ * Script stacked left, Take sticky right, each column scrolling on its own),
+ * one stacked document at <1100px, and phone refinements at <700px. Custom
+ * properties cannot be used in @media, so those two widths are literals here
+ * and nowhere else.
  */
 
 :root {
-  /* Colors: one cool neutral cast in four lightness steps, one indigo, one red. */
-  --c-paper: #ffffff; /* step 255 -- cards, mats, records, messages */
-  --c-pane: #f8f9fc; /* step 248 -- the main content ground */
-  --c-bar: #f4f5f9; /* step 244 -- the toolbar */
-  --c-sidebar: #eff0f4; /* step 239 -- the sidebar */
-  --c-sunken: #e6e9f2; /* inset fills: the job card and the status pill */
+  /* Surfaces: four steps up from the ground -- pure black only ever behind a
+     video. */
+  --c-ground: #14161b; /* the room: page ground and toolbar */
+  --c-panel: #181b21; /* a section's own face */
+  --c-raised: #20242d; /* fields, buttons, messages: things you touch */
+  --c-inset: #0f1115; /* the HUD, a record, the log: things you read */
+  --c-black: #000000; /* the video mat, and nothing else */
 
-  /* Lines: four weights, one job each. */
-  --c-line: #e4e7ef; /* structural hairline */
-  --c-line-soft: #eceef5; /* sub-hairline inside a card */
-  --c-line-strong: #dfe3ec; /* control borders */
-  --c-line-filled: #dbe0ec; /* border of a filled control */
-  --c-line-hover: #ccd2e0; /* hover / active border on a control */
-  --c-separator: #c6cbd8; /* mid-dot and slash separators inside a meta line */
+  /* Lines: hairline structure, control borders, meta separators. */
+  --c-hairline: #2a2e38;
+  --c-hairline-soft: #232731;
+  --c-control-line: #333847;
+  --c-control-line-hover: #4a5163;
+  --c-separator: #454c5b;
 
-  /* Text: one ink, three weights, plus the family variants. */
-  --c-ink: #12151c;
-  --c-muted: #5c6470;
-  --c-quiet: #7b8391;
-  --c-faint: #8b93a1;
-  --c-nav-ink: #3d434e;
-  --c-nav-icon: #79808d;
-  --c-idle: #9aa1ad;
-  --c-placeholder: #a9b0bd;
+  /* Text: one ink, three weights, an idle grey and a placeholder. Every value
+     here clears 4.5:1 on the surface it is used on. */
+  --c-ink: #e7e9ee;
+  --c-muted: #9aa1af;
+  --c-quiet: #8a92a1;
+  --c-faint: #7e8695;
+  --c-idle: #5d6572; /* the unlit recording dot; decoration, not text */
+  --c-placeholder: #7e8695;
 
-  /* Accent: one indigo with exactly two jobs -- active nav, primary action. */
-  --c-accent: #4f46e5;
-  --c-accent-hover: #4338ca;
-  --c-accent-soft: #e3e7fd;
-  --c-accent-ring: rgba(79, 70, 229, 0.16);
-  --c-accent-disabled: #e4e6f3;
-  --c-accent-disabled-line: #dcdff0;
-  --c-accent-disabled-ink: #a2a7c4;
+  /* The recording lamp: the one accent. It marks the primary action and the
+     live render, and nothing else. */
+  --c-rec: #e5484d;
+  --c-rec-hover: #f25b52;
+  --c-rec-ink: #14161b; /* charcoal on red -- 4.6:1 */
+  --c-rec-soft: rgba(229, 72, 77, 0.16);
+  --c-rec-ring: rgba(229, 72, 77, 0.35);
+  --c-rec-disabled: #392a2c;
+  --c-rec-disabled-line: #4a3437;
+  --c-rec-disabled-ink: #8c6a6d;
 
-  /* Danger is message severity only: a left rule and an icon. */
-  --c-danger: #b42318;
+  /* Danger is message severity only; the icon tells it from the lamp. */
+  --c-danger: #e5484d;
 
-  --c-progress-track: #d9dde9;
-  --c-control-hover: #f4f5fa;
+  --c-control-hover: #262b35;
+  --c-progress-track: #2a2e38;
 
   /* Ghosted empty artifacts. */
-  --c-ghost-board: #f6f8fc;
-  --c-ghost-bar: #eceef5;
-  --c-line-art: #eceef4;
+  --c-ghost-board: #1b1e25;
+  --c-ghost-bar: #232732;
 
-  --font-ui: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* next/font owns --font-ui and --font-mono (set on <html>); these stacks
+     are the fallback for the moment before -- or without -- it. */
+  --font-ui-stack: var(--font-ui, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif);
+  --font-mono-stack: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
 
-  /* Radii: controls are 8px, cards 12px. */
+  /* Radii: controls are 8px, sections 12px. */
   --r-sm: 4px;
   --r: 8px;
   --r-md: 10px;
   --r-lg: 12px;
   --r-full: 9999px;
 
-  /* The spacing rhythm, plus the named pane metrics. */
-  --sp-1: 4px;
-  --sp-2: 6px;
-  --sp-3: 8px;
-  --sp-4: 10px;
-  --sp-5: 12px;
-  --sp-6: 16px;
-  --sp-7: 20px;
-  --sp-9: 28px;
-  --pane-gutter: 28px;
-  --pane-head-top: 22px;
-  --pane-head-bottom: 16px;
-  --pane-foot-top: 16px;
-  --pane-foot-bottom: 26px;
-  --sidebar-width: 220px;
-  --toolbar-height: 46px;
   --control-height: 34px;
   --control-height-sm: 30px;
   --control-height-lg: 36px;
-  --row-gap: 8px;
-  --row-gap-loose: 14px;
-  --shell-min-width: 1024px;
-  --pane-max-width: 1100px;
+  --toolbar-height: 48px;
+  --column-left-width: 380px;
 }
 
 * {
   box-sizing: border-box;
 }
 
+/* Section links scroll themselves into view; smooth unless asked otherwise. */
+html {
+  scroll-behavior: smooth;
+}
+
 body {
   margin: 0;
   color: var(--c-ink);
-  font-family: var(--font-ui);
-  font-size: 13.5px;
+  font-family: var(--font-ui-stack);
+  font-size: 14px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 
-/* The document ground (see layout.tsx): the pane's own tint, and no frame. */
+/* The document ground (see layout.tsx): the room's own tint, and no frame. */
 body.app-ground {
-  background: var(--c-pane);
+  background: var(--c-ground);
 }
 
-/*
- * Every control takes a visible focus indicator. The field's own is specified
- * below (border plus ring); everything else takes this outline, so a nav item,
- * a thumbnail or a button is never reachable without a mark. The active
- * thumbnail's crisp edge is a selection state and stays distinguishable -- it
- * is a border, this is an outline offset from it.
- */
+/* Every control takes a visible focus indicator, in the lamp's red. */
 :focus-visible {
-  outline: 2px solid var(--c-accent);
+  outline: 2px solid var(--c-rec);
   outline-offset: 1px;
 }
 
 /* ───────────────────────────── shell ───────────────────────────── */
 
 /*
- * Three regions and a footer, filling the viewport. Below the shell's min-width
- * nothing reflows: the document scrolls horizontally and the layout is clipped.
+ * The control room fills the viewport; the columns scroll inside it, so the
+ * toolbar and the banner never leave. Below 1100px the shell becomes an
+ * ordinary document (see the end of this file).
  */
 .shell {
   height: 100vh;
-  min-width: var(--shell-min-width);
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--c-pane);
+  background: var(--c-ground);
 }
 
 .toolbar {
@@ -145,24 +136,46 @@ body.app-ground {
   height: var(--toolbar-height);
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 0 var(--row-gap-loose) 0 22px;
-  background: var(--c-bar);
-  border-bottom: 1px solid var(--c-line);
+  gap: 10px;
+  padding: 0 20px;
+  background: var(--c-ground);
+  border-bottom: 1px solid var(--c-hairline);
+}
+
+/* The favicon's mark at 13px: a ring with the lamp lit. */
+.app-mark {
+  position: relative;
+  flex: 0 0 auto;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--c-control-line);
+  border-radius: 50%;
+}
+
+.app-mark::after {
+  content: '';
+  position: absolute;
+  inset: 2.5px;
+  border-radius: 50%;
+  background: var(--c-rec);
 }
 
 .app-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
   color: var(--c-ink);
+  white-space: nowrap;
 }
 
 .project-crumb {
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--c-faint);
-  font-variant-numeric: tabular-nums;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--c-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -170,223 +183,237 @@ body.app-ground {
 
 .project-crumb::before {
   content: '/';
-  margin-right: 8px;
   color: var(--c-separator);
 }
 
-/* A status readout, not a button: it opens nothing. */
-.render-status-pill {
+/* The folder name, for when you go looking for the file. */
+.project-id {
   margin-left: auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 11px 5px var(--sp-4);
-  border-radius: var(--r-full);
-  background: var(--c-sunken);
-  border: 1px solid var(--c-line-filled);
+  flex: 0 0 auto;
+  font-family: var(--font-mono-stack);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
-  color: var(--c-muted);
+  color: var(--c-faint);
   font-variant-numeric: tabular-nums;
 }
 
-.render-status-pill i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--c-idle);
-  flex: 0 0 auto;
-}
-
-.render-status-pill i.is-live {
-  background: var(--c-accent);
+.workspace {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 .shell-body {
   flex: 1 1 auto;
   min-height: 0;
-  display: flex;
-  align-items: stretch;
+  display: grid;
+  grid-template-columns: var(--column-left-width) minmax(0, 1fr);
+  gap: 18px;
+  padding: 16px 20px 20px;
 }
 
-/* ──────────────────────────── sidebar ──────────────────────────── */
-
-.sidebar {
-  flex: 0 0 var(--sidebar-width);
-  width: var(--sidebar-width);
+/* Each column is its own scroll: Brief and Script on the left, Take on the
+   right, and the take never leaves the screen. */
+.column-left,
+.column-right {
+  min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
+  gap: 18px;
   overflow-y: auto;
-  background: var(--c-sidebar);
-  border-right: 1px solid var(--c-line);
-  padding: var(--sp-6) var(--sp-5) 0;
 }
 
-/* The project title and nothing else: no status line, no second meta line. */
-.sidebar-project {
-  padding: 2px var(--sp-3) 18px;
+/* ──────────────────────────── sections ─────────────────────────── */
+
+.section {
+  /* Columns scroll rather than shrink: a section is its artifact's frame,
+     never squeezed by the one below it. */
+  flex: 0 0 auto;
+  background: var(--c-panel);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-lg);
+  scroll-margin-top: 10px;
 }
 
-.sidebar-project h2 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: -0.005em;
-  color: var(--c-ink);
-  overflow-wrap: anywhere;
+/* The attention flash: a section you asked to see lights its frame once. */
+.section.is-flash {
+  animation: section-flash 1.2s ease-out;
 }
 
-.nav-label {
-  padding: 0 9px;
-  margin: 0 0 7px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--c-faint);
+@keyframes section-flash {
+  0% {
+    border-color: var(--c-rec);
+    box-shadow: 0 0 0 3px var(--c-rec-ring);
+  }
+  100% {
+    border-color: var(--c-hairline);
+    box-shadow: 0 0 0 3px rgba(229, 72, 77, 0);
+  }
 }
 
-.nav {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.nav-item {
+.section-head {
   display: flex;
   align-items: center;
-  gap: 9px;
-  width: 100%;
-  height: var(--control-height);
-  padding: 0 9px;
-  border: 0;
-  border-radius: var(--r);
-  background: transparent;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--c-nav-ink);
-  text-align: left;
-  cursor: pointer;
+  gap: 8px;
+  padding: 14px 18px 0;
 }
 
-.nav-item svg {
-  flex: 0 0 auto;
-  color: var(--c-nav-icon);
+/* The pipeline is a sequence, so the frames are numbered. */
+.section-index {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
 }
 
-.nav-item-state {
+.section-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--c-ink);
+}
+
+/* The old sidebar's measure, kept: each artifact's own count. */
+.section-count {
   margin-left: auto;
   display: inline-flex;
   align-items: center;
-  gap: var(--sp-1);
+  gap: 4px;
+  font-family: var(--font-mono-stack);
   font-size: 11px;
-  font-weight: 400;
   color: var(--c-faint);
   font-variant-numeric: tabular-nums;
 }
 
-/* Fill + colour + weight. No bar, no border, no shadow. */
-.nav-item.is-active {
-  background: var(--c-accent-soft);
-  color: var(--c-accent);
-  font-weight: 600;
+.section-count svg {
+  color: var(--c-rec);
 }
 
-.nav-item.is-active svg,
-.nav-item.is-active .nav-item-state {
-  color: var(--c-accent);
+.section-body {
+  padding: 12px 18px 16px;
 }
 
-.nav-item:hover:not(.is-active) {
-  background: var(--c-control-hover);
+.section-foot {
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--c-hairline-soft);
 }
 
-/* ───────────── sidebar foot: the render job, and nothing else ───────────── */
-
-.sidebar-foot {
-  margin-top: auto;
-  border-top: 1px solid var(--c-line);
-  padding: var(--sp-5) var(--sp-3) var(--sp-6);
+/* A readout line: values in muted ink at 500, separated by the mid-dot. */
+.section-foot-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+  margin: 0;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
 }
 
-.job-card {
-  background: var(--c-sunken);
-  border: 1px solid var(--c-line-filled);
-  border-radius: var(--r);
-  padding: var(--sp-4) 11px 11px;
+.section-foot-meta .v {
+  color: var(--c-muted);
+  font-weight: 500;
 }
 
-.job-head {
+.section-foot-meta .sep {
+  color: var(--c-separator);
+  margin: 0 3px;
+}
+
+.section-foot-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+/* ─────────────────────── the Take HUD ──────────────────────────── */
+
+/*
+ * The one memorable element: a viewfinder strip. While a job runs the lamp is
+ * lit and pulsing, REC sits beside it, and the clock ticks in mono; at rest
+ * the same line carries the last outcome, dismissible, or just "Idle".
+ */
+.hud {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
+  gap: 10px;
+  margin: 12px 18px 0;
+  padding: 7px 8px 7px 12px;
+  background: var(--c-inset);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r);
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--c-muted);
 }
 
-.job-head i {
-  width: 6px;
-  height: 6px;
+.hud.is-live {
+  color: var(--c-ink);
+}
+
+.rec-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   background: var(--c-idle);
+}
+
+.rec-dot.is-live {
+  background: var(--c-rec);
+  box-shadow: 0 0 0 3px var(--c-rec-soft);
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.hud-label {
   flex: 0 0 auto;
+  color: var(--c-rec);
+  letter-spacing: 0.08em;
 }
 
-.job-head i.is-live {
-  background: var(--c-accent);
+.hud-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.job-head .button-dismiss {
-  margin-left: auto;
-}
-
-.job-title {
-  font-size: 12px;
-  font-weight: 600;
+.hud-clock {
+  flex: 0 0 auto;
   color: var(--c-ink);
-  overflow-wrap: anywhere;
 }
 
-.job-detail {
-  margin: var(--sp-2) 0 0;
-  font-size: 11.5px;
-  font-weight: 400;
-  line-height: 1.5;
-  color: var(--c-quiet);
-  font-variant-numeric: tabular-nums;
-}
-
-.job-line {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-3);
-  margin-top: 7px;
-  font-size: 11.5px;
-  font-weight: 400;
-  line-height: 1.5;
-  color: var(--c-quiet);
-  font-variant-numeric: tabular-nums;
-}
-
-.job-line .right {
-  margin-left: auto;
-  color: var(--c-ink);
-  font-weight: 600;
-}
-
-.progress-bar-row {
+.progress-row {
   display: flex;
   align-items: center;
-  gap: var(--sp-3);
-  margin-top: 9px;
+  gap: 10px;
+  margin: 8px 18px 0;
 }
+
+/* ─────────────────────── progress, and cancel ──────────────────── */
 
 .progress-bar {
   flex: 1 1 auto;
-  height: 6px;
-  border-radius: 3px;
+  height: 4px;
+  border-radius: var(--r-full);
   background: var(--c-progress-track);
   overflow: hidden;
 }
@@ -394,141 +421,96 @@ body.app-ground {
 .progress-bar > i {
   display: block;
   height: 100%;
-  background: var(--c-accent);
+  border-radius: inherit;
+  background: var(--c-rec);
   transition: width 0.3s ease;
 }
 
 .progress-number {
+  flex: 0 0 auto;
+  font-family: var(--font-mono-stack);
   font-size: 11px;
-  font-weight: 600;
-  color: var(--c-accent);
+  color: var(--c-muted);
   font-variant-numeric: tabular-nums;
 }
 
 .button-cancel {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  width: 100%;
-  height: var(--control-height-sm);
-  margin-top: 11px;
-  border: 1px solid #cfd4e2;
-  border-radius: 7px;
-  background: var(--c-paper);
-  color: var(--c-nav-ink);
-  font-family: inherit;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--c-control-line);
+  border-radius: 6px;
+  background: var(--c-raised);
+  color: var(--c-ink);
+  font-family: var(--font-ui-stack);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
 }
 
 .button-cancel:hover:not(:disabled) {
-  border-color: #b3bacd;
-  color: var(--c-ink);
+  background: var(--c-control-hover);
+  border-color: var(--c-control-line-hover);
 }
 
 .button-cancel:disabled {
-  color: var(--c-idle);
-  border-color: var(--c-line);
+  color: var(--c-faint);
+  border-color: var(--c-hairline);
   cursor: not-allowed;
 }
 
-/* 20px, the smallest interactive target in the app -- a deliberate exception
- * for a mouse-driven single-user tool. */
+/* 22px, the smallest interactive target in the app -- a deliberate exception
+ * for a mouse-driven single-user tool. Phones get 28px below. */
 .button-dismiss {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--c-idle);
+  color: var(--c-faint);
   cursor: pointer;
 }
 
 .button-dismiss:hover {
-  background: #dde1ec;
-  color: var(--c-muted);
+  background: var(--c-control-hover);
+  color: var(--c-ink);
 }
 
-/* ────────────────────────────── pane ───────────────────────────── */
+/* ────────────────────── the job bar (small screens) ────────────── */
 
-.pane {
+/* A mirror of the HUD's live state, fixed to the bottom, shown only below
+   1100px -- where Take can be scrolled off screen mid-render. Rendered only
+   while a job runs, so it never sits idle. */
+.job-bar {
+  display: none;
+}
+
+.job-bar-text {
   flex: 1 1 auto;
   min-width: 0;
-  overflow-y: auto;
-  background: var(--c-pane);
-}
-
-/* Capped and left-aligned to the pane gutter: the video mat is the pane's only
- * elevated object, so its size is a hierarchy signal rather than a width. */
-.pane-inner {
-  max-width: var(--pane-max-width);
-}
-
-.pane-head {
-  display: flex;
-  align-items: center;
-  gap: var(--row-gap-loose);
-  padding: var(--pane-head-top) var(--pane-gutter) var(--pane-head-bottom);
-}
-
-.pane-title {
-  margin: 0;
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.012em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
   color: var(--c-ink);
-}
-
-.pane-subtitle {
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--c-faint);
   font-variant-numeric: tabular-nums;
 }
 
-.pane-body {
-  padding: 2px var(--pane-gutter) var(--pane-foot-bottom);
-}
-
-.pane-foot {
-  padding: var(--pane-foot-top) var(--pane-gutter) var(--pane-foot-bottom);
-}
-
-.pane-foot-meta {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-1);
-  margin: 0;
-  font-size: 12.5px;
-  font-weight: 400;
-  color: var(--c-faint);
-  font-variant-numeric: tabular-nums;
-  flex-wrap: wrap;
-}
-
-.pane-foot-meta .v {
+.job-bar-clock {
+  flex: 0 0 auto;
+  font-family: var(--font-mono-stack);
+  font-size: 12px;
   color: var(--c-ink);
-  font-weight: 600;
-}
-
-.pane-foot-meta .sep {
-  color: var(--c-separator);
-  margin: 0 3px;
-}
-
-.pane-foot-controls {
-  display: flex;
-  align-items: center;
-  gap: var(--row-gap);
-  margin-top: var(--row-gap-loose);
-  flex-wrap: wrap;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ───────────────────────────── buttons ─────────────────────────── */
@@ -539,53 +521,49 @@ body.app-ground {
   justify-content: center;
   gap: 7px;
   height: var(--control-height);
-  padding: 0 13px;
-  border: 1px solid var(--c-line-strong);
+  padding: 0 14px;
+  border: 1px solid var(--c-control-line);
   border-radius: var(--r);
-  background: var(--c-paper);
+  background: var(--c-raised);
   color: var(--c-ink);
-  font-family: inherit;
-  font-size: 13.5px;
+  font-family: var(--font-ui-stack);
+  font-size: 13px;
   font-weight: 500;
   line-height: 1;
   text-decoration: none;
   cursor: pointer;
-  box-shadow: 0 1px 1px rgba(18, 21, 28, 0.04);
+  transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 
 .button:hover:not(:disabled) {
   background: var(--c-control-hover);
-  border-color: var(--c-line-hover);
+  border-color: var(--c-control-line-hover);
 }
 
 .button:disabled {
-  color: var(--c-idle);
-  border-color: var(--c-line);
-  background: var(--c-paper);
-  box-shadow: none;
+  background: var(--c-ground);
+  color: var(--c-faint);
+  border-color: var(--c-hairline);
   cursor: not-allowed;
 }
 
 .button.primary {
-  background: var(--c-accent);
-  border-color: var(--c-accent);
-  color: var(--c-paper);
-  font-weight: 550;
-  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.28);
+  background: var(--c-rec);
+  border-color: var(--c-rec);
+  color: var(--c-rec-ink);
+  font-weight: 600;
 }
 
 .button.primary:hover:not(:disabled) {
-  background: var(--c-accent-hover);
-  border-color: var(--c-accent-hover);
+  background: var(--c-rec-hover);
+  border-color: var(--c-rec-hover);
 }
 
 /* A refused action reads as unavailable, not broken: it keeps its place. */
 .button.primary:disabled {
-  background: var(--c-accent-disabled);
-  border-color: var(--c-accent-disabled-line);
-  color: var(--c-accent-disabled-ink);
-  box-shadow: none;
-  cursor: not-allowed;
+  background: var(--c-rec-disabled);
+  border-color: var(--c-rec-disabled-line);
+  color: var(--c-rec-disabled-ink);
 }
 
 .button.sm {
@@ -596,45 +574,41 @@ body.app-ground {
 
 .button.lg {
   height: var(--control-height-lg);
-  padding: 0 15px;
-}
-
-/* The pane's primary, pushed right in the foot. */
-.pane-foot-controls .button.primary {
-  margin-left: auto;
+  padding: 0 16px;
+  font-size: 13.5px;
 }
 
 /* ──────────────────────── banner zone and messages ─────────────── */
 
 /* Collapses to nothing when it holds no messages -- no reserved height. */
 .banner-zone {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
-  gap: var(--sp-3);
-  padding: 0 var(--pane-gutter) 2px;
+  gap: 8px;
+  padding: 12px 20px 0;
 }
 
 .message {
   display: flex;
   align-items: flex-start;
   gap: 11px;
-  padding: var(--sp-4) 11px 11px 13px;
-  background: var(--c-paper);
-  border: 1px solid var(--c-line);
+  padding: 10px 12px 10px 13px;
+  background: var(--c-raised);
+  border: 1px solid var(--c-hairline);
   border-left: 3px solid var(--c-danger);
   border-radius: var(--r-md);
-  box-shadow: 0 1px 2px rgba(18, 21, 28, 0.035);
 }
 
 .message.is-info {
-  border-left-color: var(--c-line-strong);
+  border-left-color: var(--c-control-line-hover);
 }
 
 .message-icon {
   flex: 0 0 auto;
   width: 17px;
   height: 17px;
-  margin-top: 2px;
+  margin-top: 1px;
   color: var(--c-danger);
 }
 
@@ -649,18 +623,17 @@ body.app-ground {
 
 .message-body p {
   margin: 0;
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 400;
   line-height: 1.45;
   color: var(--c-ink);
-  font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
 
 .message-body ul {
-  margin: var(--sp-2) 0 0;
+  margin: 6px 0 0;
   padding-left: 18px;
-  font-family: var(--font-mono);
+  font-family: var(--font-mono-stack);
   font-size: 12px;
   color: var(--c-quiet);
 }
@@ -668,16 +641,16 @@ body.app-ground {
 .message-source {
   display: flex;
   align-items: center;
-  gap: var(--sp-2);
-  margin-top: var(--sp-1);
+  gap: 6px;
+  margin-top: 4px;
   font-size: 11.5px;
   font-weight: 400;
-  color: var(--c-faint);
+  color: var(--c-quiet);
   font-variant-numeric: tabular-nums;
 }
 
-/* The origin pane is a link, never a caption. It is a button because it
- * navigates within the page; it is drawn as a link because that is what it is. */
+/* The origin section is a link, never a caption. It is a button because it
+ * moves within the page; it is drawn as a link because that is what it is. */
 .message-source .link {
   display: inline-flex;
   align-items: center;
@@ -688,7 +661,7 @@ body.app-ground {
   font-family: inherit;
   font-size: 11.5px;
   font-weight: 600;
-  color: var(--c-accent);
+  color: var(--c-rec);
   cursor: pointer;
 }
 
@@ -705,52 +678,49 @@ body.app-ground {
 
 /* ─────────────────────────── the video mat ─────────────────────── */
 
-/* The pane's only elevated object -- the real thing, held off the ground. */
+/* A black frame around the real thing -- the only pure black in the app. */
 .video-mat {
-  margin: 18px var(--pane-gutter) 0;
-  padding: var(--sp-4);
-  background: var(--c-paper);
-  border: 1px solid var(--c-line);
+  margin: 12px 18px 0;
+  background: var(--c-black);
+  border: 1px solid var(--c-hairline);
   border-radius: var(--r-lg);
-  box-shadow:
-    0 1px 2px rgba(18, 21, 28, 0.05),
-    0 14px 30px rgba(18, 21, 28, 0.08);
+  overflow: hidden;
 }
 
 .video-mat video {
   display: block;
   width: 100%;
-  border-radius: var(--r);
-  background: #000;
+  background: var(--c-black);
 }
 
 .video-actions {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--row-gap-loose);
-  margin-top: var(--row-gap-loose);
+  gap: 12px;
+  margin: 10px 18px 0;
 }
 
 .meta {
-  font-size: 12.5px;
+  font-size: 12px;
   font-weight: 400;
   color: var(--c-faint);
   font-variant-numeric: tabular-nums;
 }
 
 .meta code {
-  font-family: var(--font-mono);
-  font-size: 11.5px;
-  color: var(--c-quiet);
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--c-muted);
 }
 
-/* ─────────────────────── the Input pane's pieces ───────────────── */
+/* ─────────────────────── the Brief section's pieces ────────────── */
 
-/* The pane's one line of context is the field's own question. */
+/* The section's one line of context is the field's own question. */
 .lead {
-  margin: 0 0 var(--row-gap-loose);
-  font-size: 16.5px;
-  font-weight: 600;
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 500;
   line-height: 1.4;
   letter-spacing: -0.01em;
   color: var(--c-ink);
@@ -758,11 +728,9 @@ body.app-ground {
 
 .field-label {
   display: block;
-  margin: 0 0 var(--sp-2);
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--c-muted);
 }
 
@@ -770,17 +738,32 @@ body.app-ground {
 .field {
   display: block;
   width: 100%;
-  min-height: 96px;
-  padding: var(--sp-5) var(--row-gap-loose);
-  border: 1px solid var(--c-line-strong);
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--c-control-line);
   border-radius: var(--r);
-  background: var(--c-paper);
+  background: var(--c-raised);
   color: var(--c-ink);
-  font-family: inherit;
-  font-size: 15px;
+  font-family: var(--font-ui-stack);
+  font-size: 14px;
   font-weight: 400;
-  line-height: 1.5;
+  line-height: 1.55;
   resize: vertical;
+}
+
+.field {
+  height: var(--control-height);
+  padding: 0 12px;
+  resize: none;
+}
+
+.textarea {
+  min-height: 132px;
+}
+
+.textarea.script-field {
+  min-height: 240px;
+  margin-top: 14px;
 }
 
 .textarea::placeholder,
@@ -791,36 +774,28 @@ body.app-ground {
 .textarea:focus,
 .field:focus {
   outline: none;
-  border-color: var(--c-accent);
-  box-shadow: 0 0 0 3px var(--c-accent-ring);
+  border-color: var(--c-rec);
+  box-shadow: 0 0 0 3px var(--c-rec-ring);
 }
 
 .textarea:disabled,
 .field:disabled {
   color: var(--c-quiet);
-  background: var(--c-pane);
+  background: var(--c-ground);
   cursor: not-allowed;
-}
-
-.field {
-  min-height: 0;
-}
-
-.script-field {
-  min-height: 240px;
-  margin-top: var(--sp-6);
 }
 
 .field-foot {
   display: flex;
   align-items: center;
-  gap: var(--sp-5);
-  margin-top: 9px;
+  gap: 12px;
+  margin-top: 8px;
 }
 
 .input-counter {
   margin-left: auto;
-  font-size: 12px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
   font-weight: 400;
   color: var(--c-faint);
   font-variant-numeric: tabular-nums;
@@ -828,31 +803,31 @@ body.app-ground {
 
 /* The stored topic is a record, not a field. */
 .input-record {
-  padding: var(--row-gap-loose) var(--sp-6) var(--sp-6);
-  background: var(--c-paper);
-  border: 1px solid var(--c-line);
-  border-radius: var(--r-md);
+  padding: 12px 14px;
+  background: var(--c-inset);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r);
 }
 
 .input-record-head {
   display: flex;
   align-items: baseline;
-  gap: var(--sp-4);
-  padding-bottom: var(--sp-4);
-  margin-bottom: var(--sp-5);
-  border-bottom: 1px solid var(--c-line-soft);
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid var(--c-hairline-soft);
 }
 
 .input-record-head b {
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 500;
   color: var(--c-muted);
 }
 
 .input-record-meta {
-  font-size: 11.5px;
+  margin-left: auto;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
   font-weight: 400;
   color: var(--c-faint);
   font-variant-numeric: tabular-nums;
@@ -860,7 +835,7 @@ body.app-ground {
 
 .input-record p {
   margin: 0;
-  font-size: 15px;
+  font-size: 14px;
   font-weight: 400;
   line-height: 1.6;
   color: var(--c-ink);
@@ -869,7 +844,7 @@ body.app-ground {
 }
 
 .input-record-foot {
-  margin: var(--sp-4) 0 0;
+  margin: 10px 0 0;
   font-size: 12px;
   font-weight: 400;
   line-height: 1.5;
@@ -882,27 +857,27 @@ body.app-ground {
 }
 
 .separator-rule {
-  margin-top: var(--control-height-sm);
-  padding-top: var(--sp-7);
-  border-top: 1px solid var(--c-line);
+  margin-top: 14px;
+  padding-top: 16px;
+  border-top: 1px solid var(--c-hairline-soft);
 }
 
 .new-project {
   display: flex;
+  flex-direction: column;
   align-items: flex-start;
-  gap: var(--sp-6);
+  gap: 8px;
 }
 
 .new-project .control-note {
   margin-top: 0;
-  max-width: 340px;
 }
 
 /* ───────────────────── notes under controls ────────────────────── */
 
 /* The honest line under a control that has a cost. */
 .control-note {
-  margin: 13px 0 0;
+  margin: 12px 0 0;
   font-size: 12px;
   font-weight: 400;
   line-height: 1.55;
@@ -915,11 +890,11 @@ body.app-ground {
   font-weight: 600;
 }
 
-/* Sits above the foot of an empty pane, behind a hairline. */
+/* Sits at the end of an unproduced section, behind a hairline. */
 .empty-note {
-  margin: 18px 0 0;
-  padding-top: 15px;
-  border-top: 1px solid var(--c-line-soft);
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--c-hairline-soft);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.55;
@@ -936,7 +911,8 @@ body.app-ground {
 .ghost-paragraphs {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-9);
+  gap: 22px;
+  padding: 4px 0;
 }
 
 .ghost-para {
@@ -946,46 +922,49 @@ body.app-ground {
 }
 
 .ghost-line {
-  height: 11px;
-  border-radius: var(--r-sm);
+  height: 9px;
+  border-radius: var(--r-full);
   background: var(--c-ghost-bar);
 }
 
 .ghost-line.is-med {
-  width: 88%;
+  width: 82%;
 }
 
 .ghost-line.is-short {
-  width: 56%;
+  width: 52%;
 }
 
-/* Video's ghost is its own shape: a timeline of scene blocks. */
+/* Take's ghost is its own shape -- a storyboard strip sitting in the frame the
+   video will fill, so the empty state reads as the artifact it stands in for. */
 .ghost-timeline {
   display: flex;
-  align-items: stretch;
-  gap: var(--sp-3);
-  height: 96px;
-  margin: 18px var(--pane-gutter) 0;
-  padding: var(--sp-4);
-  background: var(--c-paper);
-  border: 1px solid var(--c-line);
+  align-items: center;
+  gap: 6px;
+  margin: 12px 18px 0;
+  padding: 10px;
+  aspect-ratio: 16 / 9;
+  background: var(--c-ghost-board);
+  border: 1px solid var(--c-hairline);
   border-radius: var(--r-lg);
 }
 
 .ghost-block {
-  border: 1px solid var(--c-line-art);
-  border-radius: var(--r);
-  background: var(--c-ghost-board);
+  height: 34%;
+  border-radius: 6px;
+  background: var(--c-ghost-bar);
 }
 
 .ghost-note {
   display: flex;
   align-items: center;
-  gap: var(--row-gap-loose);
+  gap: 12px;
   flex-wrap: wrap;
 }
 
 .ghost-note p {
+  flex: 1 1 auto;
+  min-width: 200px;
   margin: 0;
   font-size: 13px;
   font-weight: 400;
@@ -1001,33 +980,188 @@ body.app-ground {
 /* ───────────────────── worker log tail, collapsed ──────────────── */
 
 .log-tail {
-  margin-bottom: var(--row-gap-loose);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .log {
-  margin: var(--sp-3) 0 0;
-  padding: var(--sp-4) var(--sp-5);
-  max-height: 260px;
+  width: 100%;
+  max-height: 240px;
   overflow: auto;
-  background: var(--c-sunken);
-  border: 1px solid var(--c-line);
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--c-inset);
+  border: 1px solid var(--c-hairline);
   border-radius: var(--r-sm);
-  font-family: var(--font-mono);
-  font-size: 12px;
-  line-height: 1.45;
+  font-family: var(--font-mono-stack);
+  font-size: 11.5px;
+  line-height: 1.5;
   color: var(--c-quiet);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
+/* ───────────────────── one column, smaller screens ─────────────── */
+
 /*
- * The bar's width changes several times a second during a render, which is
- * exactly the kind of movement the reduced-motion preference exists to stop.
- * The progress is still reported -- in the percentage beside the bar and
- * through the progressbar's aria-valuenow -- it just stops sliding.
+ * Below 1100px the control room folds into one document: Brief, Script, Take,
+ * in that order, scrolling with the page. The job bar appears -- mid-render
+ * the Take section can be off screen, and the live state must not be.
+ */
+@media (max-width: 1099.98px) {
+  .shell {
+    height: auto;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overflow: visible;
+  }
+
+  .shell-body {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .column-left,
+  .column-right {
+    overflow: visible;
+  }
+
+  .job-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 20;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 14px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    background: var(--c-panel);
+    border-top: 1px solid var(--c-hairline);
+  }
+
+  /* The bar's own width, so the text keeps the room. */
+  .job-bar-progress {
+    flex: 0 0 72px;
+  }
+
+  /* Clearance for the fixed bar while a job is live. */
+  .shell.is-rendering {
+    padding-bottom: 68px;
+  }
+}
+
+/* ──────────────────────────── phones ──────────────────────────── */
+
+@media (max-width: 699.98px) {
+  .toolbar {
+    height: 44px;
+    gap: 8px;
+    padding: 0 14px;
+  }
+
+  /* No room for the folder name; the crumb carries the identity. */
+  .project-id {
+    display: none;
+  }
+
+  .banner-zone {
+    padding: 10px 12px 0;
+  }
+
+  .shell-body {
+    gap: 12px;
+    padding: 12px 12px 24px;
+  }
+
+  .column-left,
+  .column-right {
+    gap: 12px;
+  }
+
+  .section-head {
+    padding: 12px 14px 0;
+  }
+
+  .section-body {
+    padding: 10px 14px 14px;
+  }
+
+  .section-foot {
+    padding: 12px 14px 14px;
+  }
+
+  .hud {
+    margin: 10px 14px 0;
+  }
+
+  .progress-row {
+    margin: 8px 14px 0;
+  }
+
+  .video-mat,
+  .video-actions,
+  .ghost-timeline {
+    margin-left: 14px;
+    margin-right: 14px;
+  }
+
+  /* Touch-sized targets, and a thumb-friendly stack for the actions. */
+  .button {
+    height: 40px;
+    padding: 0 16px;
+  }
+
+  .button.sm {
+    height: 36px;
+  }
+
+  .button.lg {
+    height: 44px;
+  }
+
+  .button-cancel {
+    height: 32px;
+  }
+
+  .button-dismiss {
+    width: 28px;
+    height: 28px;
+  }
+
+  .section-foot-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .section-foot-controls .button {
+    width: 100%;
+  }
+}
+
+/*
+ * The bar's width changes several times a second during a render, and the lamp
+ * pulses, and a section lights when you ask for it -- exactly the movement
+ * this preference exists to stop. The progress is still reported: in the
+ * percentage beside the bar and through the progressbar's aria-valuenow.
  */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  .rec-dot.is-live {
+    animation: none;
+  }
+
   .progress-bar > i {
     transition: none;
+  }
+
+  .section.is-flash {
+    animation: none;
   }
 }

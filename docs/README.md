@@ -26,7 +26,7 @@ rules — not code identifiers, not implementation internals.
 | [generation.md](generation.md) | How the model is asked for a script and a storyboard, how replies are constrained, validated and repaired, and how failures are reported |
 | [rendering.md](rendering.md) | How a storyboard becomes a video: stage order, narration, progress, cancellation, failure and the single-render lock |
 | [visual-language.md](visual-language.md) | How scenes become pictures: the eight kinds and their choreography, themes and accents |
-| [web-application.md](web-application.md) | The user journey, the panes, the API surface and the render lifecycle as the page sees it |
+| [web-application.md](web-application.md) | The user journey, the single-page control room, the API surface and the render lifecycle as the page sees it |
 | [operations.md](operations.md) | Setup, configuration, artifacts on disk, the test posture, resource limits and current gaps |
 
 ## The shape of the system in one paragraph

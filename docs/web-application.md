@@ -1,39 +1,56 @@
 # The web application
 
-The application is a single page with one visible artifact at a time, wrapped
-around the pipeline: paste a topic, review and edit the script, render the
-video, download it. It never draws a frame itself and never talks to the model
-directly — it is the surface over the pipeline and the watcher of the render
-worker.
+The application is a single page showing all three artifacts at once, in
+pipeline order: the **Brief** you paste, the **Script** it produced, and the
+**Take** you render from it. It never draws a frame itself and never talks to
+the model directly — it is the surface over the pipeline and the watcher of the
+render worker.
 
 ## The shell
 
-- A **toolbar** names the product and the current project's video title, and
-  carries a status pill: *Rendering* (with a pulse) or *Idle*.
-- A **sidebar** lists exactly three panes, in pipeline order, always reachable:
-  **Input**, **Script**, **Video**. Each shows a small measure of its artifact
-  when one exists — characters pasted, paragraphs in the script, and a presence
-  mark for the video.
-- One **artifact pane** is visible at a time. An empty pane is never a dead end:
-  it shows a ghosted hint explaining where its artifact comes from and a way
-  back to the Input pane.
-- A **message zone** above the pane carries failures and notices, each labelled
-  with the pane it came from and how long ago it arrived, individually
-  dismissible. A failure outranks an informational notice for the same pane.
-- A **job card** at the foot of the sidebar shows the live render: the worker's
-  current message, a progress bar, the scene being drawn, elapsed time and a
-  Cancel control; when idle it rests with the last outcome and how long ago it
-  happened.
+- A **toolbar** names the product, the current project's video title, and the
+  project's folder id in monospace — so the project can be found on disk from
+  the page.
+- Three **sections**, numbered as the pipeline runs: **Brief** (1), **Script**
+  (2), **Take** (3). All three are on the page at once; there is no navigation,
+  only scrolling. Each shows a small measure of its artifact when one exists —
+  characters pasted, paragraphs in the script, a mark for a finished take.
+- The layout is a control room: on a wide screen Brief and Script stack in a
+  left column and Take holds the right, each column scrolling on its own so the
+  take stays visible; below 1100px the three stack into one document, top to
+  bottom.
+- The **HUD** at the head of Take is the render's own readout: a recording lamp
+  that pulses while a job runs, the scene being drawn, progress, an elapsed
+  clock in monospace and Cancel. At rest the same line carries the last
+  outcome — *Last render finished 4m ago* — dismissible, or *Idle*. On narrow
+  screens, where Take can be scrolled out of sight mid-render, a **job bar**
+  fixed to the bottom of the viewport carries the same live state.
+- A **message zone** above the sections carries failures and notices, each
+  labelled with the section it came from and how long ago it arrived,
+  individually dismissible. A failure outranks an informational notice for the
+  same section. The section label is a link: it scrolls that section into view
+  and flashes its frame.
+- An empty section is never a dead end: it shows a ghosted placeholder shaped
+  like its artifact, explaining where the artifact comes from and a button back
+  to Brief.
 
-The dependency order is the product's grammar: the input gates the script, and
-the script gates the video. Nothing downstream can be created without its
+The dependency order is the product's grammar: the brief gates the script, and
+the script gates the take. Nothing downstream can be created without its
 upstream document.
+
+The design is dark-only — a control room at night — on charcoal surfaces with a
+single signal red for the recording lamp and the primary action, and
+`color-scheme: dark` so native scrollbars and form controls match. Two web fonts
+are self-hosted through `next/font`: Space Grotesk for the interface and
+JetBrains Mono for the Take column's readouts — clock, counters, project id,
+worker log. The first build in a fresh environment therefore needs network, the
+same way the render pipeline already does.
 
 ## The journey
 
 ### 1. Paste and generate
 
-The Input pane invites a topic (placeholder: *"How a bill becomes law in the
+The Brief section invites a topic (placeholder: *"How a bill becomes law in the
 UK…"*) and counts characters against the 20,000 limit live. **Generate
 storyboard** runs the two model calls — script first, then storyboard — and only
 when the script comes back is a project folder created; any later failure
@@ -45,14 +62,15 @@ While a generation runs, the page says so; generation is deliberately *not*
 blocked by a running render, because it starts an entirely new project and
 never touches the open one. On success the page reports the result — scene
 count, how long each model call took, the model name, total tokens — clears any
-state belonging to a previous project, and advances to the Script pane, which
-is the cheapest thing to fix and the thing that gates everything downstream.
+state belonging to a previous project, and scrolls the Script section into
+view — the cheapest thing to fix and the thing that gates everything
+downstream.
 There is one inline recovery: if the model returned a storyboard that failed
 validation, the failure offers a retry.
 
 ### 2. Review and edit the script
 
-The Script pane edits the video title (capped at 160 characters) and the script
+The Script section edits the video title (capped at 160 characters) and the script
 text, shows a paragraph-and-word readout and an *Unsaved changes* marker, and
 offers two actions:
 
@@ -69,13 +87,14 @@ not just as a disabled button.
 
 ### 3. Render
 
-**Render** starts the full job. It is available whenever the pane has something
-to render, and refused (server-side as well as by a disabled button) when the
+**Render** starts the full job. It is available whenever the section has
+something to render, and refused (server-side as well as by a disabled button)
+when the
 storyboard's total duration is outside the accepted 4:30–5:30 window, or when
 no scenes exist. A full render cannot start while any render — this project's
 or another's — is in flight; the refusal names the current holder.
 
-The job card then reports the worker's own messages as they happen (*"Preparing
+The HUD then reports the worker's own messages as they happen (*"Preparing
 narration…"*, *"Narrating scene 3 of 12…"*, *"Drawing scene 3 of 12…"*,
 *"Joining the scenes…"*), progress, and the current scene; **Cancel render**
 stops it, and the button stays held only once the server has confirmed a worker
@@ -84,13 +103,13 @@ can never be stuck.
 
 ### 4. Watch and download
 
-When a render finishes, the Video pane offers a player, a **Download out.mp4**
+When a render finishes, the Take section offers a player, a **Download out.mp4**
 button, and the artifact's location on disk. The video is served with byte-range
 support so scrubbing works and Safari can start playback; a file that is empty
 is treated as *no video*, because an empty file is how a render that died
 mid-write would look.
 
-If a render failed with captured worker output, the pane offers a collapsed
+If a render failed with captured worker output, the section offers a collapsed
 **Show worker log** control — the last hundred lines, captured into the project
 folder so the failure is diagnosable after the fact and after a server restart.
 
@@ -103,8 +122,8 @@ replaced rather than pushed, so it never fills browser history.
 A project that already exists shows its input as a read-only **Recorded input**
 record, with an explicit note that it is a record of what was asked for rather
 than a field — so reopening a project shows the original request instead of an
-empty box inviting a second project. **New project** starts the pane fresh and
-clears the URL but deletes nothing on disk.
+empty box inviting a second project. **New project** starts the page fresh,
+scrolls back to Brief and clears the URL but deletes nothing on disk.
 
 ## Project identity
 
@@ -175,9 +194,9 @@ media players, fetches the worker log if the job failed, and stops.
 
 - **Editing is locked during a render of that project.** Save, rebuild and the
   script fields are disabled and server-refused with a conflict. Generating a
-  new project is the deliberate exception. Navigating panes, dismissing
-  messages, playing and downloading existing media, and cancelling all remain
-  available.
+  new project is the deliberate exception. Scrolling between sections,
+  dismissing messages, playing and downloading existing media, and cancelling
+  all remain available.
 - **The budget verdict is phrased entirely on the server.** The browser never
   formats clocks or re-derives the window; it prints the sentence it was given
   and disables rendering when the verdict is negative. A passing budget
