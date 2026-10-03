@@ -8,9 +8,8 @@
  * the two spines, the spines win.
  *
  * Two rules the file is built to protect:
- *   - Chrome is the system UI face everywhere. Storyboard artwork is a rendered
- *     still of the composition, so it arrives as pixels -- the page has no font
- *     of its own to apply to it, and none to load.
+ *   - Chrome is the system UI face everywhere; the page loads no font of its
+ *     own.
  *   - A resting card separates by fill (paper on a tinted pane), never by
  *     shadow. Exactly one object in a pane is elevated: the mat.
  */
@@ -22,7 +21,6 @@
   --c-bar: #f4f5f9; /* step 244 -- the toolbar */
   --c-sidebar: #eff0f4; /* step 239 -- the sidebar */
   --c-sunken: #e6e9f2; /* inset fills: the job card and the status pill */
-  --c-paper-draw: #fdfdfb; /* the paper inside storyboard artwork only */
 
   /* Lines: four weights, one job each. */
   --c-line: #e4e7ef; /* structural hairline */
@@ -42,8 +40,7 @@
   --c-idle: #9aa1ad;
   --c-placeholder: #a9b0bd;
 
-  /* Accent: one indigo with exactly three jobs -- active nav, current scene,
-   * primary action. */
+  /* Accent: one indigo with exactly two jobs -- active nav, primary action. */
   --c-accent: #4f46e5;
   --c-accent-hover: #4338ca;
   --c-accent-soft: #e3e7fd;
@@ -59,9 +56,7 @@
   --c-control-hover: #f4f5fa;
 
   /* Ghosted empty artifacts. */
-  --c-ghost-art: #f1f3f8;
   --c-ghost-board: #f6f8fc;
-  --c-ghost-ink: #e4e8f2;
   --c-ghost-bar: #eceef5;
   --c-line-art: #eceef4;
 
@@ -470,7 +465,7 @@ body.app-ground {
   background: var(--c-pane);
 }
 
-/* Capped and left-aligned to the pane gutter: the board mat is the pane's only
+/* Capped and left-aligned to the pane gutter: the video mat is the pane's only
  * elevated object, so its size is a hierarchy signal rather than a width. */
 .pane-inner {
   max-width: var(--pane-max-width);
@@ -708,92 +703,9 @@ body.app-ground {
   flex: 0 0 auto;
 }
 
-/* ──────────────────────── scene strip and thumbs ───────────────── */
-
-.scene-strip-wrap {
-  padding: 0 var(--pane-gutter) 4px;
-  border-bottom: 1px solid var(--c-line-soft);
-}
-
-/* The strip scrolls plainly when the storyboard overflows it. The fade at the
- * clipped edge and the scroll-into-view land with their own spec. */
-.scene-strip {
-  display: flex;
-  gap: var(--sp-4);
-  overflow-x: auto;
-  padding: var(--sp-1) 2px var(--sp-5);
-}
-
-/* White on the tinted ground, one hairline, and no resting shadow. */
-.scene-thumb {
-  flex: 0 0 150px;
-  width: 150px;
-  padding: 0;
-  overflow: hidden;
-  border: 1px solid var(--c-line);
-  border-radius: var(--r);
-  background: var(--c-paper);
-  box-shadow: none;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.scene-thumb-art {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: contain;
-  background: var(--c-paper-draw);
-  border-bottom: 1px solid var(--c-line-soft);
-  pointer-events: none;
-}
-
-.scene-thumb-caption {
-  padding: 7px 9px var(--sp-3);
-}
-
-.scene-thumb-caption b {
-  display: block;
-  font-size: 11.5px;
-  font-weight: 500;
-  color: var(--c-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.scene-thumb-caption span {
-  display: block;
-  margin-top: 2px;
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--c-idle);
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-/* The crisp edge: border + inset ring read as one solid edge, never a halo. */
-.scene-thumb.is-active {
-  border-color: var(--c-accent);
-  box-shadow: inset 0 0 0 1px var(--c-accent);
-}
-
-.scene-thumb.is-active .scene-thumb-caption b,
-.scene-thumb.is-active .scene-thumb-caption span {
-  color: var(--c-accent);
-  font-weight: 600;
-}
-
-.scene-thumb:hover:not(.is-active) {
-  border-color: var(--c-line-hover);
-  box-shadow: 0 4px 12px rgba(18, 21, 28, 0.09);
-}
-
-/* ───────────────────────── mats: board and video ───────────────── */
+/* ─────────────────────────── the video mat ─────────────────────── */
 
 /* The pane's only elevated object -- the real thing, held off the ground. */
-.board-mat,
 .video-mat {
   margin: 18px var(--pane-gutter) 0;
   padding: var(--sp-4);
@@ -805,18 +717,7 @@ body.app-ground {
     0 14px 30px rgba(18, 21, 28, 0.08);
 }
 
-.board-artwork {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  object-fit: contain;
-  border: 1px solid var(--c-line-art);
-  border-radius: var(--r);
-  background: var(--c-paper-draw);
-}
-
-.video-mat video,
-.board-mat video {
+.video-mat video {
   display: block;
   width: 100%;
   border-radius: var(--r);
@@ -1031,68 +932,6 @@ body.app-ground {
 }
 
 /* ─────────────── ghosted empty artifacts: their own shape ─────────────── */
-
-.ghost-thumb {
-  flex: 0 0 150px;
-  width: 150px;
-  overflow: hidden;
-  border: 1px solid var(--c-line);
-  border-radius: var(--r);
-  background: var(--c-paper);
-}
-
-.ghost-thumb-art {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  background: var(--c-ghost-art);
-  border-bottom: 1px solid var(--c-line-soft);
-}
-
-.ghost-thumb-caption {
-  display: block;
-  padding: var(--sp-3) 9px;
-}
-
-.ghost-bar {
-  display: block;
-  height: 7px;
-  border-radius: var(--r-sm);
-  background: var(--c-ghost-bar);
-  width: 74%;
-}
-
-.ghost-bar.is-short {
-  width: 26%;
-  margin-left: auto;
-  margin-top: var(--sp-2);
-}
-
-/* The real layout with every mark muted: no ink, no shadow. */
-.ghost-mat {
-  margin: 18px var(--pane-gutter) 0;
-  padding: var(--sp-4);
-  background: var(--c-paper);
-  border: 1px solid var(--c-line);
-  border-radius: var(--r-lg);
-}
-
-.ghost-artwork {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 9;
-  border: 1px solid var(--c-line-art);
-  border-radius: var(--r);
-  background: var(--c-ghost-board);
-}
-
-.ghost-artwork g {
-  fill: none;
-  stroke: var(--c-ghost-ink);
-  stroke-width: 4;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
 
 .ghost-paragraphs {
   display: flex;
