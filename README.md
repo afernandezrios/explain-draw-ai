@@ -4,9 +4,10 @@ Paste a topic or an explanation. It becomes a script, a storyboard of clean,
 flat diagram scenes, and a ~5 minute explainer video with spoken narration, all
 on your own machine.
 
-Text → LLM (script + scene list) → zod validation → Kokoro speaks each scene's
-narration on this machine while Remotion draws the previous scene, the audio
-baked into the clip → ffmpeg joins the scene clips into `out.mp4`.
+Text → LLM (script + storyboard of typed scenes) → zod validation → Kokoro
+speaks each scene's narration on this machine while Remotion renders the
+previous scene on RemotionUI blocks, the audio baked into the clip → ffmpeg
+joins the scene clips into `out.mp4`.
 
 ## Demo
 
@@ -18,12 +19,14 @@ baked into the clip → ffmpeg joins the scene clips into `out.mp4`.
 
 [▶ Watch demo.mp4](demo.mp4)
 
-It was recorded before the current visual overhaul, so its scenes are drawn in
-the older, rougher style. What you get today is crisper: rounded flat shapes
-with pastel fills on a dot grid, an eight-colour palette (`ink`, `accent`,
-`emphasis`, `success`, `warn`, `violet`, `teal`, `gray`) and a shape
-vocabulary that includes cards, badges, containers and bullet lists alongside
-boxes, circles, arrows and stick figures.
+It was recorded before the current visual system, so its scenes are drawn in
+the older, hand-drawn whiteboard style. What you get today is different in
+kind: each scene is one of seven typed kinds — title, points, flow, topology,
+sequence, code, concept — drawn as a flat, modern diagram by its own
+choreographed component, on a dark or light page with one of six accent
+colours. Every block is a RemotionUI component copied into `src/remotion/` as
+source — never imported from a package — with the install tracked in
+`remotion-ui.json`.
 
 ## Setup
 
@@ -35,8 +38,11 @@ boxes, circles, arrows and stick figures.
 - **Nothing extra for the narration.** Kokoro, the local text-to-speech engine,
   ships with `npm install` (the `kokoro-js` dependency) and runs in-process in
   the render worker. The first narration downloads the quantized Kokoro-82M
-  model (~90 MB) into `models/`, so the first render needs network the way the
-  font download already does; after that, narration is offline.
+  model (~90 MB) into `models/`; after that, narration is offline.
+- **The type, on first use.** Every scene is set in Inter and JetBrains Mono,
+  loaded at render time through Remotion's Google Fonts integration. A still —
+  the Board's preview — or a render fetches them the first time either runs in
+  a process, and fails loudly without network.
 
 - **A model endpoint.** The pipeline asks for strict structured outputs first
   (`response_format: json_schema`); endpoints that reject it (DeepSeek answers

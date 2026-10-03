@@ -9,7 +9,7 @@ configuration, defaulting to DeepSeek.
 Everything in this document happens behind a boundary that the test suite
 replaces with a fake. That is deliberate: the model is the one unreliable
 component, so it is the *only* thing that is substituted in tests. Validation,
-layout, file-writing and rendering are the real code in tests as in production.
+file-writing, stills and rendering are the real code in tests as in production.
 
 ## Call one: the script
 
@@ -32,9 +32,11 @@ folder exists, any later failure removes exactly that folder.
 ## Call two: the storyboard
 
 The script — title and body — is the input, and the reply is the storyboard:
-an ordered list of scenes, scene 1 being the title scene. Each scene carries a
-short title (used in the progress list), a duration in whole seconds, the
-shapes to draw in order, and the narration line.
+an ordered list of scenes, scene 1 being the title scene. Each scene names a
+kind — title, points, flow, topology, sequence, code or concept — carries the
+fields that kind defines, a short title (used in the progress list), a duration
+in whole seconds and the narration line, and may name a theme and an accent
+colour.
 
 The instructions the model is given are assembled from the *same* constants the
 validator enforces, so the prompt cannot promise something the validator will
@@ -42,16 +44,25 @@ reject and the two cannot drift apart. The prompt states, in the model's terms:
 
 **Scene structure**
 
-- Each scene lasts 7–20 seconds and draws 3–12 shapes, in drawing order —
-  background panels and containers before what sits on them.
-- A scene's written words total 20 or fewer; every drawn word counts.
-- The first scene is a hand-lettered title card for the topic.
-- Shapes are spread across the board; the top band carries an app-drawn header
-  (scene title and progress bar), so the drawing stays below it.
-- Colour is a signal, not decoration: the default ink for most things, blue for
-  the one thing that matters most in a scene, red for failures and removals,
-  green and amber for the good and bad sides of a comparison, and three further
-  names for extra categories and de-emphasised parts.
+- Each scene lasts 7–20 seconds, and each kind's own fields are capped: a list
+  of 2–5 points, a pipeline of 2–5 stages, a hierarchy of 3–10 nodes, a rail of
+  2–5 steps, a listing of at most 24 lines of at most 100 characters. The caps
+  are quoted from the same numbers the validator enforces.
+- A scene's written words are capped per kind — 30 for a title card, 65 for
+  points, 45 for a flow, 70 for a topology, 65 for a sequence, 40 for code, 55
+  for a concept — and every word the scene writes counts, except the code
+  listing, which is bounded by lines and characters.
+- The first scene is the title kind: a title card for the topic.
+- Theme is dark or light, and accent marks the one thing that matters most in a
+  scene — one of six named colours, or none. Accent is a signal, not
+  decoration.
+- In a hierarchy, a node names its parent by the index of an *earlier* node in
+  the same scene, and exactly one node has no parent. A parent listed after its
+  child, or a second root, is rejected.
+- The kinds are to be chosen for the beat, not reused by habit: a list of
+  reasons is points, a chain of stages is flow, an ordered walk-through is
+  sequence, who reports to whom is topology, an excerpt to read closely is
+  code, and the one idea the video exists for is concept.
 
 **Narration**
 
@@ -72,23 +83,22 @@ reject and the two cannot drift apart. The prompt states, in the model's terms:
 - The script is the anchor: read at 2 words per second, the scenes' narration
   together should re-tell the whole script rather than condense it.
 
-**The drawing vocabulary**
+**The scene kinds**
 
-The prompt teaches the same fourteen shape kinds the storyboard defines — nine
-geometric primitives and five composites that carry their own words and
-structure (a titled card, a grouping panel, a symbol badge, a bullet list, a
-divider) — and encourages the composites, because they do more inside the
-12-shape cap. It also teaches the relationship fields: a label can name the
-shape it sits in, an underline the label it belongs to, an arrow or connector
-the two shapes it joins. The model is told the index counts from the start of
-the scene's own list and that a wrong index is worse than none, and it is told
-the honest division of labour: coordinates are a starting point, and the system
-centres, shrinks, and docks anchored geometry itself.
+The prompt teaches the same seven kinds the storyboard defines, built by
+mapping over the schema's own kind table — so a kind added to the schema cannot
+be missing from the prompt. Each kind arrives with its purpose, its fields and
+its caps; the written-word budgets, the per-kind counts, the accent vocabulary
+and the duration window are all read from the same constants the validator
+uses, so the prompt cannot promise something the validator will reject.
 
-**When the narration says something is broken**, the model draws a dedicated
-cross-out shape rather than a hand-made X, listed after the shape it crosses.
-**Every stick figure is labelled** with what it stands for, so no figure is
-anonymous.
+The division of labour is stated once: the model states content and, in one
+place, a relationship. That relationship is a hierarchy node's parent — the
+index of a node *listed before it* in the same scene's node list, with exactly
+one node left parentless as the root. The prompt says the index counts from the
+start of the scene's own list and that a parent listed after its child, or a
+scene with no root or two, is rejected. Coordinates never enter the picture:
+the block that draws the kind decides where everything sits.
 
 ## How replies are constrained
 
@@ -120,22 +130,20 @@ plain-JSON one.
 
 ## Validation and the repair pass
 
-Every storyboard reply is judged locally by the same three steps every read
-path uses, in the same order:
+Every storyboard reply is judged locally by the same two steps every read path
+uses, in the same order:
 
 1. **Structure** — types, ranges, required fields, string lengths, index
    bounds. A reply that fails this cannot be repaired, because the complaint
    cannot be attached to a well-formed scene; it is a hard error.
-2. **Layout** — relationships resolved: labels centred and shrunk to fit, line
-   ends docked to the shapes they name, out-of-range relationships cleared and
-   reported rather than fatal.
-3. **Whole-scene rules** — the 20-word budget, the narration word budget, the
-   3–12 shape count, bullet-list length, and the rule that nothing may be drawn
-   off the board.
+2. **Whole-scene rules** — each kind's word budget and item caps, the narration
+   word budget, the listing's line and character limits, and the hierarchy's
+   parent rules — a parent must be listed before its child, and exactly one
+   node is the root.
 
-Then a fourth, separate check on the storyboard as a whole: the total duration
-must fall inside the 4:30–5:30 window. It is separate because only the total
-can see it — no single scene is at fault.
+Then a separate check on the storyboard as a whole: the total duration must
+fall inside the 4:30–5:30 window. It is separate because only the total can see
+it — no single scene is at fault.
 
 **The storyboard gets two attempts: the first, plus one targeted repair.** When
 the first attempt fails, the validator's own complaints — with their exact

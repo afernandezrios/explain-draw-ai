@@ -23,12 +23,11 @@ the same format, tagged with its mode.
 ### 1. Pre-flight: nothing starts on a storyboard that cannot be drawn
 
 Before the worker claims anything or writes anything, it re-reads the storyboard
-from the project folder and puts it through the same three steps every reader
-uses: check its structure, resolve the relationships between shapes, then apply
-the whole-scene rules. A missing, unreadable, empty or invalid storyboard is
-refused with the problems listed (up to eight of them), and nothing is written
-— not even a status file, so a previous job's outcome stays visible for
-diagnosis.
+from the project folder and puts it through the same two steps every reader
+uses: check its structure, then apply the whole-scene rules. A missing,
+unreadable, empty or invalid storyboard is refused with the problems listed (up
+to eight of them), and nothing is written — not even a status file, so a
+previous job's outcome stays visible for diagnosis.
 
 A full render additionally refuses a storyboard whose total duration falls
 outside the accepted four-and-a-half to five-and-a-half-minute window, telling

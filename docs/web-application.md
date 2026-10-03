@@ -71,20 +71,27 @@ not just as a disabled button.
 
 The Board pane shows a horizontal strip of scene thumbnails — each labelled
 with its number, title and duration — with the selected scene drawn large
-below, plus a scene readout (*"Scene 3 of 12 · Title · 12s · 5 shapes"*) and
-Previous/Next navigation. Thumbnails and artwork are generated on demand from
-the stored storyboard, not stored as files, so the Board is fully populated the
-moment a storyboard exists — before any render.
+below, plus a scene readout in the scene's own terms (*"Scene 3 of 12 · Title ·
+12s · 5 points"*) and Previous/Next navigation. Thumbnails and artwork are
+rendered on demand: each is a still of the composition — the scene's own final
+frame — produced by the server at the requested width and cached in memory, so
+nothing is stored as a file and the Board is fully populated the moment a
+storyboard exists, before any render. The first still after a server start pays
+a one-time cost (bundling the composition, downloading the headless browser,
+fetching the fonts); after that the strip is quick, and every image is keyed to
+the storyboard version, so a rebuilt storyboard never shows a stale frame.
+Stills are served through their own one-at-a-time queue rather than the render
+lock, so the Board stays usable while a render is in flight.
 
 If a scene preview video exists for the project, a player appears under the
 artwork. The pane's primary action is **Render this scene**: it takes the
 single render lock, synthesizes that scene's narration, and draws it alone —
 the fastest way to check the look before committing to the full render.
 
-The preview drawing is produced through the *same* drawing path as the video
-frames, and the handwriting font is embedded in the drawing itself, so what the
-Board shows is exactly what the renderer will draw and the preview does not
-depend on the page having loaded the font.
+The still is a frame of the same composition the worker renders — the same
+components, the same fonts, the same canvas and theme — so what the Board shows
+is exactly what the renderer will draw, down to the pixel. Nothing about the
+preview is drawn twice.
 
 ### 4. Render
 
@@ -152,7 +159,7 @@ returned something that does not validate.
 | Start render | Full render by default, single-scene preview via a scene index; all the pre-flight refusals happen here |
 | Cancel | Asks to stop this project's render; false simply means it was already over |
 | Video | Serves the finished video or the preview, with byte ranges; no caching |
-| Preview drawing | The SVG of one scene, drawn by the same path as the video |
+| Scene still | One frame of the composition as a PNG at a requested width; content-addressed by a storyboard version, so a versioned URL can be cached hard |
 | Render log | The tail of the captured worker output |
 
 ## Render lifecycle, from the app's side
@@ -208,8 +215,9 @@ media players, fetches the worker log if the job failed, and stops.
   refused with the specific problems listed — but an existing finished video
   remains playable and downloadable.
 - **Artifacts are never cached.** Imagery carries a version that changes when
-  the storyboard is rebuilt, and media players are re-keyed when a job ends, so
-  the page always shows the current artifact rather than a stale one.
+  the storyboard is rebuilt — a versioned still URL is served as immutable,
+  while the player URLs are re-keyed when a job ends — so the page always shows
+  the current artifact rather than a stale one.
 
 Next: how the storyboard documents are produced, in
 [generation.md](generation.md); how video is produced, in

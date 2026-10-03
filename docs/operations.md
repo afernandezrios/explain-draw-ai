@@ -13,8 +13,10 @@ lives, how it is tested, and what is currently known to be outstanding.
   at DeepSeek.
 - **A headless browser** for rendering. It is downloaded into a cache on the
   first render, so the first render needs network and takes noticeably longer.
-- **Network on first use** for two downloads: the headless browser and the
-  local voice model (~90 MB). Afterwards, narration and rendering are offline.
+- **Network on first use** for three things: the headless browser, the local
+  voice model (~90 MB), and the two font families (Inter and JetBrains Mono)
+  that a still or a render fetches from Google's font CDN the first time either
+  runs in a process. Afterwards, narration and rendering are offline.
 - **On WSL2**, Chrome's shared libraries usually need installing by hand; the
   README lists the packages, and a render that dies with a missing-library
   error should be checked against that list first.
@@ -140,8 +142,8 @@ What it verifies, in functional terms:
   failed, and the video route's range-serving behaviour.
 - **Real rendering** — codec, canvas, frame rate and duration of the produced
   file; all scene clips present and join temporaries cleaned up; a repeated
-  render being byte-identical; previews never touching the full-render clips;
-  and the offline preview embedding the handwriting font.
+  render being byte-identical; and previews never touching the full-render
+  clips.
 
 What it deliberately does not cover: provider compliance and the plain-JSON
 fallback path against a real endpoint, token/cost accounting, audio quality
@@ -157,23 +159,24 @@ to a human pass. Check before writing or modifying tests as part of a change.
 
 ## Known gaps and current state
 
-- **Test fixtures predate the narration requirement.** The scene format now
-  requires a non-empty narration line on every scene, but the canned storyboards
-  used by the fake model and the shortest-scene test fixtures were written
-  before that field existed. Until they are updated, the type check reports
-  missing narration fields and the happy-path generation/render tests cannot
-  pass. This is fixture drift, not a missing capability.
-- **The demo video predates the visual overhaul.** The `demo.mp4` in the
-  repository was recorded with the older, rougher drawing style; the current
-  renderer draws the crisp, flat style described in
+- **Old projects' storyboards no longer validate.** The typed scene model
+  replaced the flat shape vocabulary, so a `scenes.json` written before the
+  change fails validation: its Board is refused and it cannot render. The
+  remedy is in the app — rebuild the storyboard from the saved script.
+- **The test suite and its fixtures predate the current formats.** The canned
+  storyboards under the test suite were written for the old shape vocabulary
+  and before narration, and its route tests still exercise the retired preview
+  route. The maintainer's test pass — updating fixtures and route assertions —
+  is outstanding; until it lands, the type check and `npm test` are red. This
+  is fixture drift, not a missing capability.
+- **The demo video predates the scene-kind visual system.** The `demo.mp4` in
+  the repository was recorded with the older whiteboard drawing; the current
+  renderer draws the seven typed kinds described in
   [visual-language.md](visual-language.md).
-- **The component kit is not yet driven by storyboards.** It is a library and
-  a Studio test bench; adopting it is expected to happen by adding storyboard
-  vocabulary, not by rewriting either side.
 - **Package-manager drift.** The README says npm while the tracked lockfile is
-  pnpm's, and the lockfile lacks at least one dependency added since. Refreshing
-  it is deferred work; confirm with the maintainer before switching package
-  managers.
+  pnpm's, and the lockfile still lists a dependency that has since been removed
+  (the retired hand-drawn renderer's `roughjs`). Refreshing it is deferred work;
+  confirm with the maintainer before switching package managers.
 - **Narration rate is a measured planning constant.** The words-per-second
   figure behind the storyboard's narration caps was calibrated against the
   bundled voice; if the voice setting changes, the figure should be

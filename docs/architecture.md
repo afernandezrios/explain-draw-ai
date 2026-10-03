@@ -18,9 +18,9 @@ why they are separate:
    validated storyboard into a video file. It owns the expensive work: speaking
    the narration, running a headless browser, drawing every frame, and joining
    the result with ffmpeg.
-3. **The composition** — the drawing program the worker renders. It turns a
-   scene plus a point in time into the picture that belongs on screen at that
-   moment.
+3. **The composition** — the drawing program the worker renders. It is built
+   from one choreographed component per scene kind, and turns a scene plus a
+   point in time into the picture that belongs on screen at that moment.
 
 The three never share memory and never call each other's code directly. What
 they share is the **storyboard contract**: the web application writes a
@@ -114,30 +114,35 @@ real behaviour without calling an external model.
 
 **The pipeline is three named steps** — text to script, script to storyboard,
 storyboard to video. The first two are model calls; the third is the worker.
-Everything else in the codebase exists to serve, validate, lay out, draw or
-report on those three steps.
+Everything else in the codebase exists to serve, validate, draw or report on
+those three steps.
 
 ## Read paths are identical
 
 A storyboard that came from the model, one that was hand-edited on disk, and one
-that was generated last month are all read the same way: check structure,
-resolve relationships, apply the whole-scene rules. Every read path runs those
-three steps in that order, including the renderer immediately before drawing.
+that was generated last month are all read the same way: check structure, then
+apply the whole-scene rules. Every read path runs those two steps in that
+order, including the renderer immediately before drawing.
 
 That is a deliberate consistency guarantee rather than a convenience:
 
-- geometry is never judged before relationships are resolved, because resolving
-  can fix what judgment would refuse;
+- a complaint about counts or budgets is only ever raised against a scene that
+  already has the right shape;
 - a hand-edited storyboard is judged exactly like a generated one;
 - the worker never draws something the application would have refused.
 
+A storyboard written before the typed scene model — under the old shape
+vocabulary — simply fails this check, which is why such projects must have
+their storyboard rebuilt in the application before they can render again.
+
 ## One place where scenes become pictures
 
-The preview the user sees in the browser and the frames the worker renders are
-produced by the **same drawing step**, fed different time values. The preview
-asks for the fully drawn state; the renderer asks for the state at each frame's
-moment. There is no second implementation to drift: if a scene looks a
-particular way in the preview, that is how it will be drawn in the video.
+The Board's preview and the worker's frames are produced by the **same
+composition**. The preview is not a drawing of its own: the server renders the
+composition's own last frame to a still image through the same player the
+worker uses, and the worker renders every frame of the same composition with
+the same components and fonts. There is no second implementation to drift: the
+picture the user approves is a frame of the video, not an approximation of it.
 
 ## Configuration and environment
 
@@ -162,20 +167,24 @@ they share:
 | Location | Role |
 |---|---|
 | The application directory | The browser page and the API handlers — the user-facing surface |
-| The library directory | Everything shared: the storyboard contract, generation, validation, layout, drawing, project files, the render lock and status, the narration wrapper |
-| The composition directory | The drawing program the renderer mounts, plus the component kit and its demos |
+| The library directory | Everything shared: the storyboard contract, generation, validation, server-side stills, project files, the render lock and status, the narration wrapper |
+| The composition directory | The scene-kind components the renderer mounts: the block source for each kind, the shared primitives and helpers they use, and the adapter that translates storyboard scenes into their props |
 | The worker script | The render worker's entry point — the only place that imports the narration engine |
+| The component-install config | Records the component library, its root and its aliases, so its blocks can be added or refreshed in place |
 | The tests directory | End-to-end tests only; there is no unit-test layer |
 | The projects directory | Where project folders live (configurable) |
-| The public directory | The bundled handwriting font used by the offline preview |
-| The scripts directory | One-off tooling, including the generator for the text-measurement table |
 
 Two rules about this layout are worth knowing because they explain apparent
-oddities: shared modules are imported with explicit file extensions (Node runs
-the worker and tests directly by stripping types, while the web bundler accepts
-the same specifiers), and the narration engine is imported *only* by the
-worker's entry point, so the web server and the drawing program never drag its
-native runtime into their bundles.
+oddities. First, shared modules are imported with explicit file extensions:
+Node runs the worker and the tests directly by stripping types, while the web
+bundler accepts the same specifiers. Second, the copied component sources
+address each other through a short alias that only exists inside the
+composition directory, and webpack does not read the TypeScript compiler's
+path mappings — so the alias is registered explicitly for every bundler: the
+Studio configuration, and a shared override the worker and the stills route
+pass into their own builds. And the narration engine is still imported *only*
+by the worker's entry point, so the web server and the drawing program never
+drag its native runtime into their bundles.
 
 ## The end-to-end flow
 
@@ -185,20 +194,20 @@ pasted text
    ▼
 [ model ] ──▶ script ──────▶ [ model ] ──▶ storyboard
    │                                          │
-   │                          (structure → relationships → rules)
+   │                                  (structure → rules)
    │                                          ▼
    │                                   validated storyboard
    │                                          │
    │                              ┌───────────┴────────────┐
    │                              ▼                        ▼
    │                        web preview              render worker
-   │                       (same drawing                    │
-   │                        step, fully                     ▼
-   │                        drawn)                    scene clips
-   │                                                  (narration baked in)
-   │                                                        │
-   │                                                        ▼
-   │                                                   joined video
+   │                      (a frame of the                  │
+   │                      composition                      ▼
+   │                      itself, as a                scene clips
+   │                      still image)           (narration baked in)
+   │                                                       │
+   │                                                       ▼
+   │                                                 joined video
    ▼
 project folder: input, script, storyboard, narration, clips, preview, video,
 render log, status
