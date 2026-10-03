@@ -139,16 +139,16 @@ What it verifies, in functional terms:
   exit code), a killed worker being marked failed, and the video route's
   range-serving behaviour.
 - **Real rendering** — codec, canvas, frame rate and duration of the produced
-  file; all scene clips present and join temporaries cleaned up; and a repeated
-  render being byte-identical.
+  file, and all scene clips present and join temporaries cleaned up.
 
 What it deliberately does not cover: provider compliance and the plain-JSON
 fallback path against a real endpoint, token/cost accounting, audio quality
 (the worker's silence floor and overrun gate are runtime checks), any browser
 or UI behaviour (handlers are exercised as functions; there is no page test),
-real concurrency races (simulated deterministically), environment
-prerequisites (missing ffmpeg/browser/network), and no publishable-length video
-is ever rendered — the tests use the shortest legal storyboard.
+real concurrency races (simulated deterministically), render
+byte-determinism, environment prerequisites (missing ffmpeg/browser/network),
+and no publishable-length video is ever rendered — the tests use the shortest
+legal storyboard.
 
 **The suite and the fixtures are the maintainer's step.** In this project's
 workflow, specs routinely freeze the tests and fixtures and hand the test run
