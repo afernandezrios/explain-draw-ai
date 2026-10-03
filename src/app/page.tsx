@@ -312,6 +312,8 @@ function sceneReadout(scene: Scene): string {
       return `${scene.stages.length} stages`;
     case 'topology':
       return `${scene.nodes.length} nodes`;
+    case 'diagram':
+      return `${scene.nodes.length} boxes, ${scene.edges.length} arrows`;
     case 'sequence':
       return `${scene.steps.length} steps`;
     case 'code':

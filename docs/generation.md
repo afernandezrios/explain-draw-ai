@@ -33,10 +33,10 @@ folder exists, any later failure removes exactly that folder.
 
 The script — title and body — is the input, and the reply is the storyboard:
 an ordered list of scenes, scene 1 being the title scene. Each scene names a
-kind — title, points, flow, topology, sequence, code or concept — carries the
-fields that kind defines, a short title (used in the progress list), a duration
-in whole seconds and the narration line, and may name a theme and an accent
-colour.
+kind — title, points, flow, topology, diagram, sequence, code or concept —
+carries the fields that kind defines, a short title (used in the progress
+list), a duration in whole seconds and the narration line, and may name a theme
+and an accent colour.
 
 The instructions the model is given are assembled from the *same* constants the
 validator enforces, so the prompt cannot promise something the validator will
@@ -45,13 +45,14 @@ reject and the two cannot drift apart. The prompt states, in the model's terms:
 **Scene structure**
 
 - Each scene lasts 7–20 seconds, and each kind's own fields are capped: a list
-  of 2–5 points, a pipeline of 2–5 stages, a hierarchy of 3–10 nodes, a rail of
-  2–5 steps, a listing of at most 24 lines of at most 100 characters. The caps
-  are quoted from the same numbers the validator enforces.
+  of 2–5 points, a pipeline of 2–5 stages, a hierarchy of 3–10 nodes, a diagram
+  of 2–6 boxes and 1–8 arrows, a rail of 2–5 steps, a listing of at most 24
+  lines of at most 100 characters. The caps are quoted from the same numbers
+  the validator enforces.
 - A scene's written words are capped per kind — 30 for a title card, 65 for
-  points, 45 for a flow, 70 for a topology, 65 for a sequence, 40 for code, 55
-  for a concept — and every word the scene writes counts, except the code
-  listing, which is bounded by lines and characters.
+  points, 45 for a flow, 70 for a topology, 70 for a diagram, 65 for a
+  sequence, 40 for code, 55 for a concept — and every word the scene writes
+  counts, except the code listing, which is bounded by lines and characters.
 - The first scene is the title kind: a title card for the topic.
 - Theme is dark or light, and accent marks the one thing that matters most in a
   scene — one of six named colours, or none. Accent is a signal, not
@@ -59,10 +60,18 @@ reject and the two cannot drift apart. The prompt states, in the model's terms:
 - In a hierarchy, a node names its parent by the index of an *earlier* node in
   the same scene, and exactly one node has no parent. A parent listed after its
   child, or a second root, is rejected.
-- The kinds are to be chosen for the beat, not reused by habit: a list of
-  reasons is points, a chain of stages is flow, an ordered walk-through is
-  sequence, who reports to whom is topology, an excerpt to read closely is
-  code, and the one idea the video exists for is concept.
+- In a diagram, an arrow names the box it leaves and the box it lands on by
+  their 0-based indexes in the scene's own box list, and every arrow must name
+  boxes that exist. Loops, arrows back to an earlier box and repeated arrows
+  are all fine — only an index that names no box is rejected. A box is drawn as
+  a rounded rectangle, or as the cylinder a store of rows gets when the box's
+  shape says so.
+- The kinds are to be chosen for the beat, not reused by habit, and the drawn
+  kinds are preferred over the written ones: anything where boxes talk to boxes
+  is diagram, a chain of stages is flow, who reports to whom is topology, an
+  ordered walk-through is sequence; a list of reasons to tick off is points, an
+  excerpt to read closely is code, and concept is the one thesis scene the
+  video exists for — one at most.
 
 **Narration**
 
@@ -85,20 +94,23 @@ reject and the two cannot drift apart. The prompt states, in the model's terms:
 
 **The scene kinds**
 
-The prompt teaches the same seven kinds the storyboard defines, built by
+The prompt teaches the same eight kinds the storyboard defines, built by
 mapping over the schema's own kind table — so a kind added to the schema cannot
 be missing from the prompt. Each kind arrives with its purpose, its fields and
 its caps; the written-word budgets, the per-kind counts, the accent vocabulary
 and the duration window are all read from the same constants the validator
 uses, so the prompt cannot promise something the validator will reject.
 
-The division of labour is stated once: the model states content and, in one
-place, a relationship. That relationship is a hierarchy node's parent — the
-index of a node *listed before it* in the same scene's node list, with exactly
-one node left parentless as the root. The prompt says the index counts from the
-start of the scene's own list and that a parent listed after its child, or a
-scene with no root or two, is rejected. Coordinates never enter the picture:
-the block that draws the kind decides where everything sits.
+The division of labour is stated once: the model states content and, in two
+places, a relationship. In a hierarchy that relationship is a node's parent —
+the index of a node *listed before it* in the same scene's node list, with
+exactly one node left parentless as the root. In a diagram it is an edge's two
+endpoints — the 0-based indexes of the boxes it leaves and lands on, with no
+ordering rule and cycles allowed, because a round-trip has no root and no first
+box. The prompt says both indexes count from the start of the scene's own list
+and that a parent listed after its child, a scene with no root or two, or an
+arrow naming a box that does not exist is rejected. Coordinates never enter the
+picture: the block that draws the kind decides where everything sits.
 
 ## How replies are constrained
 

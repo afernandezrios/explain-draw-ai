@@ -13,16 +13,19 @@ import type { Accent, Scene, Theme } from '../lib/schema.ts';
 import type { CodeRevealProps } from '@/remotion/scenes/code-reveal';
 import type { ConceptProps } from '@/remotion/scenes/concept';
 import type { DataFlowPipesProps } from '@/remotion/scenes/data-flow-pipes';
+import type { DiagramSceneProps } from '@/remotion/scenes/diagram';
 import type { FeatureListProps } from '@/remotion/scenes/feature-list';
 import type { OrgChartBuildProps } from '@/remotion/scenes/org-chart-build';
 import type { TimelineStepsProps } from '@/remotion/scenes/timeline-steps';
 import type { TitleCardProps } from '@/remotion/scenes/title-card';
 import { conceptTimeline } from '@/remotion/scenes/concept';
+import { diagramNominal } from '@/remotion/scenes/diagram';
 
 type TitleScene = Extract<Scene, { kind: 'title' }>;
 type PointsScene = Extract<Scene, { kind: 'points' }>;
 type FlowScene = Extract<Scene, { kind: 'flow' }>;
 type TopologyScene = Extract<Scene, { kind: 'topology' }>;
+type DiagramScene = Extract<Scene, { kind: 'diagram' }>;
 type SequenceScene = Extract<Scene, { kind: 'sequence' }>;
 type CodeScene = Extract<Scene, { kind: 'code' }>;
 type ConceptScene = Extract<Scene, { kind: 'concept' }>;
@@ -116,6 +119,11 @@ export function nominalSeconds(scene: Scene): number {
 
     case 'topology':
       return topologyNominal(scene);
+
+    case 'diagram':
+      // The block's own beat plan, from its shared timeline -- box count and
+      // edge count both move it, and both live on the scene.
+      return diagramNominal(scene.nodes, scene.edges);
 
     case 'sequence':
       // timeline-steps: the last step's check (T.start + (n-1)*(T.dwell +
@@ -261,6 +269,23 @@ export function orgChartProps(scene: TopologyScene): OrgChartBuildProps {
     })),
     // undefined keeps the block's own level ramp.
     levelColors: levelColorsFor(scene.accent),
+    ...shared(scene),
+  };
+}
+
+export function diagramSceneProps(scene: DiagramScene): DiagramSceneProps {
+  return {
+    title: scene.title,
+    nodes: scene.nodes.map((node) => ({
+      name: node.name,
+      note: node.note ?? undefined,
+      shape: node.shape ?? undefined,
+    })),
+    edges: scene.edges.map((edge) => ({
+      from: edge.from,
+      to: edge.to,
+      label: edge.label ?? undefined,
+    })),
     ...shared(scene),
   };
 }

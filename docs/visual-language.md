@@ -1,21 +1,22 @@
 # The visual system
 
-Every scene in the finished video is one of seven **scene kinds**, and each kind
+Every scene in the finished video is one of eight **scene kinds**, and each kind
 is drawn by its own choreographed component — a scene block taken from
-**RemotionUI** and copied into this repository as source. This document
-describes how a scene becomes a picture, what the pictures look like, and the
-guarantees that keep the preview and the video showing the same thing.
+**RemotionUI** and copied into this repository as source, or, for the concept
+and diagram scenes, assembled in-repo from those copied primitives. This
+document describes how a scene becomes a picture, what the pictures look like,
+and the guarantees that keep the preview and the video showing the same thing.
 
 ## From scene to picture
 
 A scene names its kind and carries that kind's content: a title card carries a
 headline and its smaller lines, a list carries its points, a pipeline carries
-its stages, a hierarchy carries its nodes and their parents. The storyboard
-carries no coordinates, no sizes and no colour values. The block for the kind
-computes everything else — placement, spacing, text fitting, line routing —
-and fills the whole frame itself. There is no shared header, title bar or
-progress chrome drawn over it; where a scene's title appears, the block's own
-design decides.
+its stages, a hierarchy carries its nodes and their parents, a diagram carries
+its boxes and the arrows between them. The storyboard carries no coordinates,
+no sizes and no colour values. The block for the kind computes everything else
+— placement, spacing, text fitting, line routing — and fills the whole frame
+itself. There is no shared header, title bar or progress chrome drawn over it;
+where a scene's title appears, the block's own design decides.
 
 The component source for each kind lives in the repository rather than being
 installed as a package, so the drawing is ours to read and to adjust, and
@@ -26,7 +27,7 @@ with a safe area the block keeps its content inside. A block reads the canvas
 each frame and lays itself out against it — which is also why a still can be
 produced at any width without redrawing anything.
 
-## The seven kinds
+## The eight kinds
 
 | Kind | What it shows | How it moves |
 |---|---|---|
@@ -34,14 +35,15 @@ produced at any width without redrawing anything.
 | Points | A list of two to five points being worked through | Rows arrive one at a time; each row's rule draws across and its check strokes in behind it, so the scene lands on a list visibly ticked off |
 | Flow | A left-to-right pipeline with a payload moving through it | Stages come up in order and the pipes draw between them; payloads then travel hop by hop, lighting each stage as they land and ticking its tally, until the last one drains and completes |
 | Topology | A hierarchy of three to ten nodes — an org chart, a taxonomy | Levels assemble top-down: connectors draw down from the parents already standing, and the nodes land on the ends of those lines a beat later |
+| Diagram | A free-form diagram of two to six labelled boxes joined by one to eight arrows — a round-trip, a handshake, who asks whom; a box whose shape says so is drawn as the cylinder a store of rows gets | Boxes spring in row by row — cylinders with them; each arrow then draws itself by hand to the rim of the box it lands on, and its label fades in at the curve's midpoint |
 | Sequence | An ordered process of two to five steps along a rail | The rail draws ahead of a travelling head; each step lights as the head lands on it, works through a ring that closes, then checks off and dims to done as the head moves on |
 | Code | A code editor writing out a listing | A write head moves through the listing character by character with the caret riding its tip; once the file is complete, the lines that matter are focused and the rest of the listing recedes |
 | Concept | An explanation with its vocabulary: a paragraph, the terms it uses, the points to keep, a takeaway | The paragraph types on under a resting caret; each term is struck by a marker in turn; the key points rise as a staggered list; the takeaway is stamped on |
 
 The choreography is the point: a scene *does* something — a pipeline runs, a
-list gets ticked off — rather than fading in as a finished diagram. And because
-all seven kinds share one motion vocabulary, seven kinds of scene still read as
-one video.
+list gets ticked off, arrows draw themselves — rather than fading in as a
+finished diagram. And because all eight kinds share one motion vocabulary,
+eight kinds of scene still read as one video.
 
 ## Fitting a scene to its narration
 

@@ -5,10 +5,10 @@
  * the model is asked for exactly this shape, and the render worker refuses to
  * draw a `scenes.json` that does not validate against it.
  *
- * A scene is one of seven kinds -- title, points, flow, topology, sequence,
- * code, concept -- and each kind is drawn by its own choreographed component
- * (see `SCENE_NOTES`). The kind and its fields are a discriminated union: the
- * model picks a kind and fills in that kind's fields.
+ * A scene is one of eight kinds -- title, points, flow, topology, diagram,
+ * sequence, code, concept -- and each kind is drawn by its own choreographed
+ * component (see `SCENE_NOTES`). The kind and its fields are a discriminated
+ * union: the model picks a kind and fills in that kind's fields.
  *
  * Two rules constrain the schema definitions below, and both are load-bearing:
  *
@@ -112,6 +112,14 @@ export const CODE_LANGUAGES = [
 export type CodeLanguage = (typeof CODE_LANGUAGES)[number];
 
 /**
+ * The outlines a diagram box may wear. A plain rounded rectangle is the
+ * default, so the vocabulary only names the shapes that change the drawing --
+ * today the cylinder a store of rows is drawn as.
+ */
+export const DIAGRAM_SHAPES = ['box', 'database'] as const;
+export type DiagramShape = (typeof DIAGRAM_SHAPES)[number];
+
+/**
  * The per-kind caps -- how many items a list may hold, how long a listing may
  * run. All of them are rules the strict output subset cannot express as array
  * or string bounds, so each is enforced by a refinement below and quoted by the
@@ -125,6 +133,10 @@ export const MIN_FLOW_PACKETS = 1;
 export const MAX_FLOW_PACKETS = 12;
 export const MIN_TOPOLOGY_NODES = 3;
 export const MAX_TOPOLOGY_NODES = 10;
+export const MIN_DIAGRAM_NODES = 2;
+export const MAX_DIAGRAM_NODES = 6;
+export const MIN_DIAGRAM_EDGES = 1;
+export const MAX_DIAGRAM_EDGES = 8;
 export const MIN_SEQUENCE_STEPS = 2;
 export const MAX_SEQUENCE_STEPS = 5;
 export const CODE_MAX_LINES = 24;
@@ -338,6 +350,51 @@ const SCENE_KIND_SPECS = {
         `the nodes, ${MIN_TOPOLOGY_NODES}-${MAX_TOPOLOGY_NODES} of them: exactly one root, and every parent listed before its children`,
       ),
   }),
+  diagram: z.object({
+    kind: z.literal('diagram'),
+    ...COMMON_SCENE_FIELDS,
+    nodes: z
+      .array(
+        z.object({
+          name: z.string().min(1).max(60).describe('the name inside the box, one or two words'),
+          note: optionalText(
+            100,
+            'a short line under the name -- what the box does -- or null for none',
+          ),
+          shape: z
+            .enum(DIAGRAM_SHAPES)
+            .describe(
+              `the outline of this box, or null for the default rounded rectangle; "database" draws the cylinder a store of rows gets. One of ${DIAGRAM_SHAPES.join(', ')}`,
+            )
+            .nullable()
+            .optional(),
+        }),
+      )
+      .describe(
+        `the boxes of the diagram, ${MIN_DIAGRAM_NODES}-${MAX_DIAGRAM_NODES} of them, one per thing that acts`,
+      ),
+    edges: z
+      .array(
+        z.object({
+          from: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_DIAGRAM_NODES - 1)
+            .describe('the 0-based index of the box the arrow leaves'),
+          to: z
+            .number()
+            .int()
+            .min(0)
+            .max(MAX_DIAGRAM_NODES - 1)
+            .describe('the 0-based index of the box the arrow arrives at'),
+          label: optionalText(60, 'what travels along the arrow, a word or two, or null for none'),
+        }),
+      )
+      .describe(
+        `the arrows between the boxes, ${MIN_DIAGRAM_EDGES}-${MAX_DIAGRAM_EDGES} of them; an arrow may loop back to an earlier box or repeat`,
+      ),
+  }),
   sequence: z.object({
     kind: z.literal('sequence'),
     ...COMMON_SCENE_FIELDS,
@@ -421,6 +478,7 @@ export const SCENE_CAPS: Record<SceneKind, string> = {
   points: `${MIN_POINTS_ITEMS}-${MAX_POINTS_ITEMS} items`,
   flow: `${MIN_FLOW_STAGES}-${MAX_FLOW_STAGES} stages and ${MIN_FLOW_PACKETS}-${MAX_FLOW_PACKETS} packets`,
   topology: `${MIN_TOPOLOGY_NODES}-${MAX_TOPOLOGY_NODES} nodes with exactly one root, every parent listed before its children`,
+  diagram: `${MIN_DIAGRAM_NODES}-${MAX_DIAGRAM_NODES} boxes and ${MIN_DIAGRAM_EDGES}-${MAX_DIAGRAM_EDGES} arrows, each arrow pointing at boxes that exist`,
   sequence: `${MIN_SEQUENCE_STEPS}-${MAX_SEQUENCE_STEPS} steps`,
   code: `at most ${CODE_MAX_LINES} lines of at most ${CODE_MAX_LINE_CHARS} characters`,
   concept: `${MIN_CONCEPT_TERMS}-${MAX_CONCEPT_TERMS} terms and up to ${MAX_CONCEPT_KEY_POINTS} key points`,
@@ -433,6 +491,7 @@ export const SCENE_NOTES: Record<SceneKind, string> = {
   points: `a ticked-off list of ${SCENE_CAPS.points}, each a short label with an optional detail line`,
   flow: `a left-to-right pipeline of ${SCENE_CAPS.flow}, naming the unit the payload is counted in`,
   topology: `a hierarchy of ${SCENE_CAPS.topology} -- for org charts, taxonomies and family trees`,
+  diagram: `a boxes-and-arrows diagram of ${SCENE_CAPS.diagram} -- boxes for the things that act, arrows for what passes between them, for any beat about how things connect: a round-trip, a handshake, who asks whom for what. A box is a rounded rectangle, or a database cylinder when its shape says so -- name the store that keeps the rows. An arrow may point at any box -- loops and two-way arrows are fine -- and a word or two on the arrow says what travels along it`,
   sequence: `an ordered process of ${SCENE_CAPS.sequence} walked step by step along a rail, each a title with an optional description`,
   code: `a code editor revealing a listing of ${SCENE_CAPS.code}, with the lines that matter highlighted once it is written`,
   concept: `an explanation: a paragraph of plain prose with ${SCENE_CAPS.concept}, plus an optional one-line takeaway`,
@@ -450,6 +509,7 @@ const MAX_WRITTEN_WORDS: Record<SceneKind, number> = {
   points: 65,
   flow: 45,
   topology: 70,
+  diagram: 70,
   sequence: 65,
   code: 40,
   concept: 55,
@@ -546,6 +606,12 @@ export function countWrittenWords(scene: Scene): number {
       return (
         title +
         scene.nodes.reduce((sum, node) => sum + countWords(node.name) + optionalWords(node.role), 0)
+      );
+    case 'diagram':
+      return (
+        title +
+        scene.nodes.reduce((sum, node) => sum + countWords(node.name) + optionalWords(node.note), 0) +
+        scene.edges.reduce((sum, edge) => sum + optionalWords(edge.label), 0)
       );
     case 'sequence':
       return (
@@ -676,6 +742,45 @@ export const SceneSchema = SceneShapeSchema.superRefine((scene, ctx) => {
           message: `this chart has ${roots} root nodes; exactly one node may have no parent`,
         });
       }
+      break;
+    }
+    case 'diagram': {
+      // Unlike a topology, a diagram's boxes carry no ordering rule: an arrow
+      // may leave any box and land on any other, including one listed later,
+      // the box it left (a loop), or a box a previous arrow already touched.
+      // Architecture's round-trips are exactly that shape. What is left to
+      // judge is that every endpoint names a box that exists -- see the next
+      // scene's list when it does not.
+      if (scene.nodes.length < MIN_DIAGRAM_NODES || scene.nodes.length > MAX_DIAGRAM_NODES) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['nodes'],
+          message: `this scene has ${scene.nodes.length} boxes; between ${MIN_DIAGRAM_NODES} and ${MAX_DIAGRAM_NODES} fit the diagram`,
+        });
+      }
+      if (scene.edges.length < MIN_DIAGRAM_EDGES || scene.edges.length > MAX_DIAGRAM_EDGES) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['edges'],
+          message: `this scene has ${scene.edges.length} arrows; between ${MIN_DIAGRAM_EDGES} and ${MAX_DIAGRAM_EDGES} fit the diagram`,
+        });
+      }
+      scene.edges.forEach((edge, index) => {
+        if (edge.from >= scene.nodes.length) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['edges', index, 'from'],
+            message: `this arrow leaves box ${edge.from}, but the scene has only ${scene.nodes.length} boxes; box indexes count from zero`,
+          });
+        }
+        if (edge.to >= scene.nodes.length) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['edges', index, 'to'],
+            message: `this arrow lands on box ${edge.to}, but the scene has only ${scene.nodes.length} boxes; box indexes count from zero`,
+          });
+        }
+      });
       break;
     }
     case 'sequence':

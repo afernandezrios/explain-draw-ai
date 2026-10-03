@@ -171,7 +171,7 @@ to a human pass. Check before writing or modifying tests as part of a change.
   is fixture drift, not a missing capability.
 - **The demo video predates the scene-kind visual system.** The `demo.mp4` in
   the repository was recorded with the older whiteboard drawing; the current
-  renderer draws the seven typed kinds described in
+  renderer draws the eight typed kinds described in
   [visual-language.md](visual-language.md).
 - **Package-manager drift.** The README says npm while the tracked lockfile is
   pnpm's, and the lockfile still lists a dependency that has since been removed

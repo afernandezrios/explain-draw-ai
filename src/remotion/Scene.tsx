@@ -6,6 +6,7 @@ import {
   codeRevealProps,
   conceptSceneProps,
   dataFlowPipesProps,
+  diagramSceneProps,
   featureListProps,
   orgChartProps,
   timelineStepsProps,
@@ -14,6 +15,7 @@ import {
 import { CodeReveal } from '@/remotion/scenes/code-reveal';
 import { ConceptScene } from '@/remotion/scenes/concept';
 import { DataFlowPipes } from '@/remotion/scenes/data-flow-pipes';
+import { Diagram } from '@/remotion/scenes/diagram';
 import { FeatureList } from '@/remotion/scenes/feature-list';
 import { OrgChartBuild } from '@/remotion/scenes/org-chart-build';
 import { TimelineSteps } from '@/remotion/scenes/timeline-steps';
@@ -43,6 +45,8 @@ const SceneByKind: React.FC<{ scene: SceneData }> = ({ scene }) => {
       return <DataFlowPipes {...dataFlowPipesProps(scene)} />;
     case 'topology':
       return <OrgChartBuild {...orgChartProps(scene)} />;
+    case 'diagram':
+      return <Diagram {...diagramSceneProps(scene)} />;
     case 'sequence':
       return <TimelineSteps {...timelineStepsProps(scene)} />;
     case 'code':

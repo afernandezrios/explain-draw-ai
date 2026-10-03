@@ -2,7 +2,7 @@
 
 The product's data model is small and deliberately explicit. There are two
 creative documents — a **script** and a **storyboard** — and one vocabulary of
-drawing instructions: seven **scene kinds**. Every stage of the system reads and
+drawing instructions: eight **scene kinds**. Every stage of the system reads and
 writes the same things, and every rule about them lives in one place, so the
 model's instructions, the validator, the preview and the renderer cannot
 disagree.
@@ -71,7 +71,7 @@ its full budget still has real slack at render time.
 
 ## The scene kinds
 
-Each scene names one of seven kinds, and the kind decides how the scene is
+Each scene names one of eight kinds, and the kind decides how the scene is
 drawn and what fields it carries. A kind is not a template the model fills with
 coordinates: the storyboard states **content and one relationship**, and the
 component that draws the kind computes the rest — where each row sits, how wide
@@ -83,6 +83,7 @@ a label may run, how the lines route, when each beat lands.
 | `points` | A list being ticked off | An optional eyebrow; items, each a label with an optional detail line | 2–5 items | 65 |
 | `flow` | A left-to-right pipeline | Stages, each a label with an optional detail; the unit the payload is counted in; how many payloads to push through | 2–5 stages; 1–12 packets | 45 |
 | `topology` | A hierarchy — an org chart, a taxonomy, a family tree | Nodes, each a name, an optional role, and the index of its parent | 3–10 nodes; exactly one root; every parent listed before its children | 70 |
+| `diagram` | Free-form boxes and arrows — a round-trip, a handshake, who asks whom | Boxes, each a name, an optional note and an optional shape — the default rounded rectangle, or the cylinder a store of rows is drawn as; arrows, each naming the boxes it leaves and lands on by index, with an optional label | 2–6 boxes; 1–8 arrows; every arrow names boxes that exist — loops, back-arrows and repeated arrows are allowed | 70 |
 | `sequence` | An ordered process walked step by step | An optional eyebrow; steps, each a title with an optional description | 2–5 steps | 65 |
 | `code` | An editor writing out a listing | The code; an optional filename, language badge and starting line number; the lines to focus once it is written | At most 24 lines of at most 100 characters; the language from a fixed list | 40, counted on the editor's chrome only — the listing itself is bounded by lines and characters |
 | `concept` | One idea explained, with the vocabulary around it | An optional eyebrow; the explanation; the terms worth defining; the key points; an optional takeaway | 1–4 terms; up to 4 key points; an explanation of at most 800 characters | 55 |
@@ -91,12 +92,13 @@ a label may run, how the lines route, when each beat lands.
 
 "Written words" counts **everything the scene writes on screen**: its title, a
 list item's label and detail, a stage's label and detail, a node's name and
-role, an explanation with its terms and points, a code editor's filename and
-language badge. The budget is per kind — a title card holds a headline and
-little else, while a chart of ten labelled nodes legitimately writes more — and
-every written run is counted, so no field is a way around the cap. The one
-exception is the code listing itself: it is the scene's subject rather than its
-writing, and it is bounded by lines and characters instead.
+role, a diagram's box names, notes and arrow labels, an explanation with its
+terms and points, a code editor's filename and language badge. The budget is
+per kind — a title card holds a headline and little else, while a chart of ten
+labelled nodes legitimately writes more — and every written run is counted, so
+no field is a way around the cap. The one exception is the code listing itself:
+it is the scene's subject rather than its writing, and it is bounded by lines
+and characters instead.
 
 ### Colour
 
@@ -112,29 +114,42 @@ applied by the block according to its own design.
 
 Each kind's counts are part of the rule, not advice: a list of two to five
 items, a pipeline of two to five stages and one to twelve packets, a hierarchy
-of three to ten nodes, a rail of two to five steps, a listing of at most
-twenty-four lines of at most a hundred characters, a concept with one to four
-terms and up to four key points. The caps exist because a drawing has a size:
-past them, the scene stops being readable. The model's prompt quotes every
-number from the same constants the validator enforces.
+of three to ten nodes, a diagram of two to six boxes and one to eight arrows, a
+rail of two to five steps, a listing of at most twenty-four lines of at most a
+hundred characters, a concept with one to four terms and up to four key points.
+The caps exist because a drawing has a size: past them, the scene stops being
+readable. The model's prompt quotes every number from the same constants the
+validator enforces.
 
-## Relationships: one, and it is judged
+## Relationships: two, and both are judged
 
-The storyboard has exactly one relational field. In a hierarchy, a node names
-its parent by the index of a node **listed before it in the same scene**, and
-exactly one node has no parent — the root. The index counts from zero within
-the scene's own node list.
+Two fields in the storyboard state a relationship, and both name other items by
+index.
 
-That rule is strict, and the difference from a hint matters: a parent listed
-after its child, or a chart with no root or two, is **refused** — reported to
-the model for repair, or to the user for a hand-edited file — never quietly
-fixed and never dropped. Requiring the parent to come first also makes a cycle
-impossible.
+In a hierarchy, a node names its parent by the index — counting from zero — of
+a node **listed before it in the same scene**, and exactly one node has no
+parent — the root.
+
+In a diagram, an arrow names the box it leaves and the box it lands on by their
+indexes in the scene's own box list. There is no ordering rule and no root: an
+arrow may point at any box, including one listed later, the box it left (a
+loop), or a box an earlier arrow already touched. A round-trip — the phone
+asks, the server answers — is exactly that shape, and it is the reason the
+diagram is a kind of its own.
+
+Both rules are strict, and the difference from a hint matters: a parent listed
+after its child, a chart with no root or two, or an arrow naming a box the
+scene does not have is **refused** — reported to the model for repair, or to
+the user for a hand-edited file — never quietly fixed and never dropped.
+Requiring the parent to come first also makes a cycle impossible in a
+hierarchy; in a diagram cycles are legal, so the drawing component breaks them
+for layout instead.
 
 Everything else a scene needs is not a relationship the model states, because
 it is not the model's job: where a node sits in its level, how wide a label may
-run before it shrinks, where a connector leaves a box. The drawing component
-decides all of it from the kind's fields.
+run before it shrinks, where a connector leaves a box, which way an arrow bows
+when its twin comes back. The drawing component decides all of it from the
+kind's fields.
 
 ## What is checked where
 

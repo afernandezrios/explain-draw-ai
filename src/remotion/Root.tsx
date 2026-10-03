@@ -40,15 +40,17 @@ const calculateSceneMetadata: CalculateMetadataFunction<SceneProps> = ({ props }
  */
 export const RemotionRoot: React.FC = () => {
   return (
-    <Composition
-      id="Scene"
-      component={Scene}
-      durationInFrames={secondsToFrames(DEFAULT_SCENE.durationSeconds)}
-      fps={FPS}
-      width={CANVAS_WIDTH}
-      height={CANVAS_HEIGHT}
-      defaultProps={{ scene: DEFAULT_SCENE, sceneIndex: 0, totalScenes: 1, narrationPath: null }}
-      calculateMetadata={calculateSceneMetadata}
-    />
+    <>
+      <Composition
+        id="Scene"
+        component={Scene}
+        durationInFrames={secondsToFrames(DEFAULT_SCENE.durationSeconds)}
+        fps={FPS}
+        width={CANVAS_WIDTH}
+        height={CANVAS_HEIGHT}
+        defaultProps={{"scene":{"kind":"diagram","title":"Three Boxes, Two Arrows","durationSeconds":12,"theme":"dark","accent":"cyan","narration":"The phone asks the server, the server asks the database, and the answers come back the way they came.","nodes":[{"name":"Phone","note":"sends a request","shape":null},{"name":"Server","note":"runs your code","shape":null},{"name":"Database","note":"holds every row","shape":"database"}],"edges":[{"from":0,"to":1,"label":"request"},{"from":1,"to":2,"label":"query"},{"from":2,"to":1,"label":"rows"},{"from":1,"to":0,"label":"response"}]},"sceneIndex":0,"totalScenes":1,"narrationPath":null}}
+        calculateMetadata={calculateSceneMetadata}
+      />
+    </>
   );
 };

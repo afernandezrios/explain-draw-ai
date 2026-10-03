@@ -139,7 +139,7 @@ export const SCRIPT_SYSTEM_PROMPT = [
     TARGET_TOTAL_SECONDS / 60,
   )} minutes) of spoken explanation, roughly ${TARGET_SCRIPT_WORDS} words.`,
   'Structure the script as a short title plus markdown-ish body text with one heading per beat.',
-  'Every beat must be something that can be shown: a list of points, a pipeline, a hierarchy, an ordered process, a short code listing, or a diagram of an idea.',
+  'Every beat must be something that can be shown: a boxes-and-arrows diagram, a pipeline, a hierarchy, an ordered process, a list of points, or a short code listing.',
   'Plain language, no jargon dumps, no bullet-point walls.',
 ].join(' ');
 
@@ -191,6 +191,7 @@ export const SCENES_SYSTEM_PROMPT = [
     .join(', ')}`,
   `- theme is ${THEMES.map((theme) => `"${theme}"`).join(' or ')} (null is dark), and accent marks the one thing that matters most in a scene: one of ${ACCENTS.join(', ')}, or null. Use accent as a signal, not decoration`,
   '- in a topology, `parent` is the 0-based index of an earlier node in the same scene, and exactly one node has no parent -- the root. A parent listed after its child is rejected',
+  '- in a diagram, an arrow\'s `from` and `to` are the 0-based indexes of the boxes it leaves and lands on in the same scene\'s `nodes` list, and every arrow must name boxes that exist. Loops, arrows back to an earlier box, and repeated arrows are all fine -- only an index that names no box is rejected',
   '- every optional field must be present in your reply. When a field does not apply, write null; leaving it out is rejected',
   `- size each narration to its own scene at ${NARRATION_WPS} words per second, rounded DOWN to a whole word. The full budget: ${NARRATION_BUDGET_TABLE}`,
   `- never round up -- ${narrationRoundingExample()} -- because a narration one word over its scene's budget is rejected`,
@@ -198,7 +199,7 @@ export const SCENES_SYSTEM_PROMPT = [
   '- write narration as plain spoken English in full sentences: it is read aloud, so no headings, no lists, no stage directions',
   `- aim for about ${TARGET_TOTAL_SECONDS} seconds in total, and that total is checked: add up every scene's seconds, and the sum must land between ${MIN_TOTAL_SECONDS} and ${MAX_TOTAL_SECONDS} seconds. Scenes of 12-18 seconds are typical, which is roughly ${TYPICAL_SCENES_LO} to ${TYPICAL_SCENES_HI} scenes -- 9 or 10 short scenes totals under two minutes and is refused. Your best measure is the narration: read at ${NARRATION_WPS} words per second, the script's words are the minutes of your video, so all the scenes' narrations together should re-tell the whole script, not condense it`,
   '- scene 1 is the title scene: the `title` kind, stating the topic like a title card',
-  '- choose the kind that fits each beat rather than the same kind for everything: a list of reasons is points, a chain of stages is flow, an ordered walk-through is sequence, who reports to whom is topology, an excerpt to read closely is code, and the one idea the video exists for is concept',
+  '- choose the kind that draws the beat rather than the same kind for everything, and prefer the drawn kinds -- diagram, flow, topology, sequence -- over the written ones: anything where boxes talk to boxes is diagram, a chain of stages is flow, who reports to whom is topology, an ordered walk-through is sequence. Reach for the written kinds only when the beat is exactly that: a list of reasons to tick off is points, an excerpt to read closely is code, and concept is the one thesis scene the video exists for -- one at most',
   '',
   'Return the storyboard as {"scenes": [...]}.',
 ].join('\n');

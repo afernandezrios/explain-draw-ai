@@ -21,12 +21,13 @@ joins the scene clips into `out.mp4`.
 
 It was recorded before the current visual system, so its scenes are drawn in
 the older, hand-drawn whiteboard style. What you get today is different in
-kind: each scene is one of seven typed kinds — title, points, flow, topology,
-sequence, code, concept — drawn as a flat, modern diagram by its own
+kind: each scene is one of eight typed kinds — title, points, flow, topology,
+diagram, sequence, code, concept — drawn as a flat, modern diagram by its own
 choreographed component, on a dark or light page with one of six accent
 colours. Every block is a RemotionUI component copied into `src/remotion/` as
 source — never imported from a package — with the install tracked in
-`remotion-ui.json`.
+`remotion-ui.json`. (The concept and diagram blocks are the two exceptions:
+assembled in-repo from the copied primitives.)
 
 ## Setup
 
