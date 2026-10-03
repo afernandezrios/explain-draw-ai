@@ -5,7 +5,7 @@
  * and webpack does not read tsconfig `paths` -- so every bundling entry point
  * has to hand the mapping over explicitly. Studio gets it from
  * `remotion.config.ts`; the render worker passes `webpackAliasOverride` into
- * `bundle()`, and the stills route will do the same.
+ * `bundle()`, and the stills path does the same through `lib/still.ts`.
  */
 
 import path from 'node:path';

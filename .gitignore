@@ -7,7 +7,7 @@ next-env.d.ts
 # user data and can be many gigabytes; they are not source.
 # Anchored to the repo root on purpose: an unanchored `projects/` also matches
 # src/app/api/projects/ and silently drops the entire API surface from the repo.
-projects
+/projects
 
 # Kokoro's model cache, where the README says the weights download on the first
 # narration: ~90 MB of quantized ONNX, local user data, and not source.

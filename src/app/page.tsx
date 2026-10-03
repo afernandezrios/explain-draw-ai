@@ -296,6 +296,32 @@ function RenderLogTail({ lines }: { lines: string[] | null }) {
   );
 }
 
+/**
+ * The Board readout's per-kind clause, where a shape count used to stand.
+ *
+ * Types only: the switch narrows the scene union on its `kind` field, so the
+ * page still carries no zod into the browser bundle.
+ */
+function sceneReadout(scene: Scene): string {
+  switch (scene.kind) {
+    case 'title':
+      return 'title card';
+    case 'points':
+      return `${scene.items.length} points`;
+    case 'flow':
+      return `${scene.stages.length} stages`;
+    case 'topology':
+      return `${scene.nodes.length} nodes`;
+    case 'sequence':
+      return `${scene.steps.length} steps`;
+    case 'code':
+      // What the editor draws: the block trims blank lines before writing.
+      return `${scene.code.split('\n').filter((line) => line.trim() !== '').length} lines`;
+    case 'concept':
+      return `${scene.terms.length} terms`;
+  }
+}
+
 /** A readout line: values in ink at 600, separated by the mid-dot. */
 function Readout({ parts }: { parts: ReactNode[] }) {
   return (
@@ -1202,7 +1228,7 @@ export default function HomePage() {
               >
                 <img
                   className="scene-thumb-art"
-                  src={`/api/projects/${projectId}/preview-svg?scene=${index}&v=${sceneNonce}`}
+                  src={`/api/projects/${projectId}/preview?scene=${index}&v=${sceneNonce}&w=320`}
                   alt={`Scene ${index + 1}: ${scene.title}`}
                   loading="lazy"
                 />
@@ -1221,7 +1247,7 @@ export default function HomePage() {
           <div className="board-mat">
             <img
               className="board-artwork"
-              src={`/api/projects/${projectId}/preview-svg?scene=${selected}&v=${sceneNonce}`}
+              src={`/api/projects/${projectId}/preview?scene=${selected}&v=${sceneNonce}`}
               alt={`Scene ${selected + 1}: ${currentScene.title}`}
             />
           </div>
@@ -1246,10 +1272,7 @@ export default function HomePage() {
                 `Scene ${selected + 1} of ${scenes.length}`,
                 currentScene.title,
                 `${currentScene.durationSeconds}s`,
-                // TEMPORARY BRIDGE (Stage 1 of the RemotionUI migration): the
-                // per-kind readout lands with the preview route in Stage 3; for
-                // now the kind's own name stands where the shape count did.
-                currentScene.kind,
+                sceneReadout(currentScene),
               ]}
             />
           )}

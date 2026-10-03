@@ -8,24 +8,12 @@
  * the two spines, the spines win.
  *
  * Two rules the file is built to protect:
- *   - Chrome is the system UI face everywhere. The handwriting face is never
- *     chrome -- it belongs to the storyboard artwork, where the preview route
- *     serves its own copy of the face inside the SVG.
+ *   - Chrome is the system UI face everywhere. Storyboard artwork is a rendered
+ *     still of the composition, so it arrives as pixels -- the page has no font
+ *     of its own to apply to it, and none to load.
  *   - A resting card separates by fill (paper on a tinted pane), never by
  *     shadow. Exactly one object in a pane is elevated: the mat.
  */
-
-/* The same handwriting face the renderer uses, served from public/fonts, so the
- * app does not need the network to look like the video. The SVG preview carries
- * its own copy of this file (see the preview-svg route) and renders in an <img>,
- * where a page-level @font-face does not apply. */
-@font-face {
-  font-family: 'Architects Daughter';
-  font-style: normal;
-  font-weight: 400;
-  font-display: swap;
-  src: url('/fonts/architects-daughter-latin-400.woff2') format('woff2');
-}
 
 :root {
   /* Colors: one cool neutral cast in four lightness steps, one indigo, one red. */
