@@ -3,7 +3,6 @@ import { Composition, type CalculateMetadataFunction } from 'remotion';
 import { CANVAS_HEIGHT, CANVAS_WIDTH, FPS, secondsToFrames } from '../lib/render-config.ts';
 import type { Scene as SceneData } from '../lib/schema.ts';
 import { Scene, type SceneProps } from './Scene.tsx';
-import { KitRoot } from './kit/KitRoot.tsx';
 
 /**
  * The default storyboard is only what Remotion Studio opens with. Real renders
@@ -36,26 +35,20 @@ const calculateSceneMetadata: CalculateMetadataFunction<SceneProps> = ({ props }
 };
 
 /**
- * One composition, parameterised by the scene in its input props -- plus the
- * component kit's own demos, which the render pipeline never mounts. They are
- * here rather than in a Studio-only entry point so that the kit is visible
- * wherever the project is previewed; they cost a few component definitions and
- * nothing at render time.
+ * One composition, parameterised by the scene in its input props -- the render
+ * pipeline passes the project's own storyboard scene and mounts nothing else.
  */
 export const RemotionRoot: React.FC = () => {
   return (
-    <>
-      <Composition
-        id="Scene"
-        component={Scene}
-        durationInFrames={secondsToFrames(DEFAULT_SCENE.durationSeconds)}
-        fps={FPS}
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
-        defaultProps={{ scene: DEFAULT_SCENE, sceneIndex: 0, totalScenes: 1, narrationPath: null }}
-        calculateMetadata={calculateSceneMetadata}
-      />
-      <KitRoot />
-    </>
+    <Composition
+      id="Scene"
+      component={Scene}
+      durationInFrames={secondsToFrames(DEFAULT_SCENE.durationSeconds)}
+      fps={FPS}
+      width={CANVAS_WIDTH}
+      height={CANVAS_HEIGHT}
+      defaultProps={{ scene: DEFAULT_SCENE, sceneIndex: 0, totalScenes: 1, narrationPath: null }}
+      calculateMetadata={calculateSceneMetadata}
+    />
   );
 };
