@@ -1246,7 +1246,10 @@ export default function HomePage() {
                 `Scene ${selected + 1} of ${scenes.length}`,
                 currentScene.title,
                 `${currentScene.durationSeconds}s`,
-                `${currentScene.shapes.length} shapes`,
+                // TEMPORARY BRIDGE (Stage 1 of the RemotionUI migration): the
+                // per-kind readout lands with the preview route in Stage 3; for
+                // now the kind's own name stands where the shape count did.
+                currentScene.kind,
               ]}
             />
           )}

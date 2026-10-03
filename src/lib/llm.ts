@@ -5,8 +5,8 @@
  * rendering, files) is the real thing in test as in production. That keeps the
  * suite honest and fast.
  *
- * The model is asked for the DSL in the schema's own vocabulary. The shape list,
- * the per-scene caps and the label size bounds below are all read out of
+ * The model is asked for the DSL in the schema's own vocabulary. The scene-kind
+ * list, the per-kind caps and the written-word budgets below are all read out of
  * `schema.ts` rather than restated, so a prompt can never promise the model
  * something the validator will reject.
  */
@@ -20,34 +20,31 @@ import type {
 import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { FAKE_SCRIPT, fakeScenes } from './fixtures.ts';
-import { layOutScenes } from './layout.ts';
 import { logEvent } from './logger.ts';
 import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from './render-config.ts';
 import type { Script } from './types.ts';
 import {
-  MAX_LABEL_SIZE,
-  MAX_LABEL_WORDS,
+  ACCENTS,
   MAX_SCENE_SECONDS,
-  MAX_SHAPES_PER_SCENE,
   MAX_TOTAL_SECONDS,
-  MIN_LABEL_SIZE,
   MIN_SCENE_SECONDS,
-  MIN_SHAPES_PER_SCENE,
   MIN_TOTAL_SECONDS,
   NARRATION_WPS,
   ProviderScenesEnvelopeSchema,
-  SHAPE_KINDS,
-  SHAPE_NOTES,
+  SCENE_CAPS,
+  SCENE_KINDS,
+  SCENE_NOTES,
   ScenesEnvelopeSchema,
   TARGET_TOTAL_SECONDS,
+  THEMES,
   checkBudget,
   countWords,
   formatClock,
   issueDetails,
   maxNarrationWords,
+  maxWrittenWords,
   validateScenes,
   type BudgetCheck,
-  type Scene,
   type Scenes,
 } from './schema.ts';
 
@@ -137,12 +134,12 @@ const TYPICAL_SCENES_LO = Math.round(TARGET_TOTAL_SECONDS / 18);
 const TYPICAL_SCENES_HI = Math.round(TARGET_TOTAL_SECONDS / 12);
 
 export const SCRIPT_SYSTEM_PROMPT = [
-  'You write scripts for short diagram-style explainer videos: clean, modern whiteboard scenes with crisp flat shapes, pastel fills and hand lettering.',
+  'You write scripts for short animated explainer videos: clean, modern diagram scenes built from flat shapes and clear typography.',
   `Write for about ${TARGET_TOTAL_SECONDS} seconds (${Math.floor(
     TARGET_TOTAL_SECONDS / 60,
   )} minutes) of spoken explanation, roughly ${TARGET_SCRIPT_WORDS} words.`,
   'Structure the script as a short title plus markdown-ish body text with one heading per beat.',
-  'Every beat must be something that can be drawn: objects, arrows, labels, stick figures.',
+  'Every beat must be something that can be shown: a list of points, a pipeline, a hierarchy, an ordered process, a short code listing, or a diagram of an idea.',
   'Plain language, no jargon dumps, no bullet-point walls.',
 ].join(' ');
 
@@ -179,38 +176,29 @@ function narrationRoundingExample(): string {
 }
 
 export const SCENES_SYSTEM_PROMPT = [
-  'You turn an explainer script into a storyboard of clean, flat diagram scenes.',
+  'You turn an explainer script into a storyboard of clean, animated diagram scenes.',
   '',
-  'Each scene is drawn on one 16:9 board. All positions and sizes are percentages:',
-  '- x runs across the board, 0 = left edge, 100 = right edge',
-  '- y runs down the board, 0 = top edge, 100 = bottom edge',
-  '- widths are a percent of board width; heights, radii, stick-figure heights and',
-  '  label sizes are a percent of board height, so circles drawn with r stay round',
-  '',
-  `Draw between ${MIN_SHAPES_PER_SCENE} and ${MAX_SHAPES_PER_SCENE} shapes per scene. Shapes are drawn in array order, so list background boxes before the labels and arrows that go on them.`,
-  '',
-  'The available shapes:',
-  ...SHAPE_KINDS.map((kind) => `- ${kind}: ${SHAPE_NOTES[kind]}`),
+  'Each scene is one of these kinds, and the kind decides how it is drawn:',
+  ...SCENE_KINDS.map((kind) => `- ${kind}: ${SCENE_NOTES[kind]}`),
   '',
   'Rules:',
   `- every scene lasts ${MIN_SCENE_SECONDS} to ${MAX_SCENE_SECONDS} seconds`,
-  `- keep all the words written in a scene to ${MAX_LABEL_WORDS} words or fewer, in total: every label, every stickFigure caption, and the words inside cards, badges and bullet lists`,
-  `- label sizes run from ${MIN_LABEL_SIZE} to ${MAX_LABEL_SIZE}`,
-  '- shapes address each other by index: `label.inShape`, `underline.underLabel`, and `fromShape`/`toShape` on arrows and connectors each take the position of another shape in the SAME scene\'s "shapes" array, counting from 0, or null for none. Use them for every relationship the scene shows -- a label centred in its box, an arrow that really lands on the server, a line under the words it underlines. Count that index yourself, from the start of the array: an index pointing at the wrong shape is worse than null',
-  '- the coordinates you give an anchored shape are a starting point -- a label inside a shape is centred in it and shrunk until it fits, and an anchored line has its ends moved onto its shapes. Put them roughly where they belong and let the anchor do the work',
-  '- give every stickFigure a `label` naming what it stands for, so no figure is left anonymous',
-  '- when the narration calls something broken, cancelled or removed, draw a `crossOut` across it rather than making your own X out of lines; list it AFTER the shape it crosses, since shapes are drawn in order',
-  '- every scene carries a "narration": the words a voice speaks aloud while that scene is on screen, and the only thing the viewer hears',
+  `- a scene may write only so many words on screen, and the cap depends on its kind: ${SCENE_KINDS.map(
+    (kind) => `${kind} ${maxWrittenWords(kind)}`,
+  ).join(', ')}. Count every word the scene shows -- its title, an item's label and detail, a node's name and role, the explanation with its terms and points -- and leave a few words of headroom under the cap`,
+  `- the field caps are part of the same rule: ${SCENE_KINDS.filter((kind) => SCENE_CAPS[kind] !== '')
+    .map((kind) => `${kind}: ${SCENE_CAPS[kind]}`)
+    .join(', ')}`,
+  `- theme is ${THEMES.map((theme) => `"${theme}"`).join(' or ')} (null is dark), and accent marks the one thing that matters most in a scene: one of ${ACCENTS.join(', ')}, or null. Use accent as a signal, not decoration`,
+  '- in a topology, `parent` is the 0-based index of an earlier node in the same scene, and exactly one node has no parent -- the root. A parent listed after its child is rejected',
+  '- every optional field must be present in your reply. When a field does not apply, write null; leaving it out is rejected',
   `- size each narration to its own scene at ${NARRATION_WPS} words per second, rounded DOWN to a whole word. The full budget: ${NARRATION_BUDGET_TABLE}`,
   `- never round up -- ${narrationRoundingExample()} -- because a narration one word over its scene's budget is rejected`,
   '- leave two or three words of headroom under the budget rather than writing right up to it: a scene whose narration ends early is fine, a narration that cannot be spoken in the time the scene is on screen is not',
   '- write narration as plain spoken English in full sentences: it is read aloud, so no headings, no lists, no stage directions',
   `- aim for about ${TARGET_TOTAL_SECONDS} seconds in total, and that total is checked: add up every scene's seconds, and the sum must land between ${MIN_TOTAL_SECONDS} and ${MAX_TOTAL_SECONDS} seconds. Scenes of 12-18 seconds are typical, which is roughly ${TYPICAL_SCENES_LO} to ${TYPICAL_SCENES_HI} scenes -- 9 or 10 short scenes totals under two minutes and is refused. Your best measure is the narration: read at ${NARRATION_WPS} words per second, the script's words are the minutes of your video, so all the scenes' narrations together should re-tell the whole script, not condense it`,
-  '- scene 1 is the title scene: it states the topic like a hand-lettered title card',
-  '- use color as a signal, not decoration: null means ordinary dark ink and is right for most shapes; "accent" for the one thing that matters most in a scene; "emphasis" for failures and removals; "success" and "warn" for the good and bad sides of a comparison; "violet", "teal" and "gray" for extra categories and de-emphasised parts',
-  '- spread shapes across the board; do not stack everything in one corner',
-  '- the top of the board carries a header the app draws (the scene title and a progress bar): keep your drawing at y = 10 or below so nothing hides behind it',
-  '- prefer the composite shapes when they fit the content: a card instead of a box plus a title label, a badge instead of a small circle plus its label, a bulletList for a list of points, and a container behind a group of related shapes',
+  '- scene 1 is the title scene: the `title` kind, stating the topic like a title card',
+  '- choose the kind that fits each beat rather than the same kind for everything: a list of reasons is points, a chain of stages is flow, an ordered walk-through is sequence, who reports to whom is topology, an excerpt to read closely is code, and the one idea the video exists for is concept',
   '',
   'Return the storyboard as {"scenes": [...]}.',
 ].join('\n');
@@ -231,20 +219,18 @@ const MAX_STORYBOARD_ATTEMPTS = 2;
  * The caps, restated at the very end of whichever prompt is built -- after the
  * fallback's schema blob, which would otherwise be the last thing the model
  * reads. They are prose-only: the strict JSON Schema subset cannot carry
- * `minItems`/`maxItems`, so nothing in the grammar stops a scene drawing 13
- * shapes. Interpolated from the same constants the validator uses, so the
+ * `minItems`/`maxItems`, so nothing in the grammar stops a points scene listing
+ * six items. Interpolated from the same constants the validator uses, so the
  * reminder cannot drift from the rule.
  */
 function storyboardCapsReminder(script: Script): string {
   const scriptWords = countWords(script.text);
   return (
-    '\n\nReminder: count the shapes in every scene -- each one must draw between ' +
-    `${MIN_SHAPES_PER_SCENE} and ${MAX_SHAPES_PER_SCENE} of them -- keep each scene's ` +
-    `written words (labels, captions and the text inside composite shapes) within ${MAX_LABEL_WORDS} words, ` +
-    `and keep each scene's narration to the ` +
-    `word budget for its own length: ${NARRATION_WPS} words per second rounded DOWN to a ` +
-    `whole word (${narrationRoundingExample()}). The script runs to ${scriptWords} words, ` +
-    `which read aloud at ${NARRATION_WPS} words per second is ` +
+    '\n\nReminder: count the words each scene writes on screen -- every kind has ' +
+    `its own cap (${SCENE_KINDS.map((kind) => `${kind} ${maxWrittenWords(kind)}`).join(', ')}) -- and keep ` +
+    `each scene's narration to the word budget for its own length: ${NARRATION_WPS} words per ` +
+    `second rounded DOWN to a whole word (${narrationRoundingExample()}). The script runs to ` +
+    `${scriptWords} words, which read aloud at ${NARRATION_WPS} words per second is ` +
     `${formatClock(Math.round(scriptWords / NARRATION_WPS))} of narration: all the scenes' ` +
     `narrations together should re-tell the whole script, not condense it, and the ` +
     `scenes' seconds added together must land between ${formatClock(MIN_TOTAL_SECONDS)} ` +
@@ -258,8 +244,8 @@ function storyboardCapsReminder(script: Script): string {
  * "scene 1" and the model must fix the scene the validator means, not the one
  * two doors down.
  *
- * The index arrives in one of two shapes: `scenes.2.shapes`, when the complaint
- * came from the envelope, or `2.shapes`, from `validateScenes` walking the
+ * The index arrives in one of two shapes: `scenes.2.items`, when the complaint
+ * came from the envelope, or `2.items`, from `validateScenes` walking the
  * unwrapped array -- which is the one `generateScenes` actually feeds in. Both
  * are handled, so neither has to know about the other.
  */
@@ -758,11 +744,10 @@ export class OpenAiLlm implements Llm {
       );
 
       // Scenes travel wrapped so the JSON Schema root can be an object; unwrap
-      // and lay them out before validating, so the validator judges the geometry
-      // that will actually be drawn -- a label centred in its box by the layout
-      // pass is not the label the model wrote down.
-      const laid = layOutScenes(envelope.scenes);
-      const validation = validateScenes(laid.scenes);
+      // and validate. There is nothing to lay out: each kind's block owns its
+      // own placement, and the one relational rule -- a topology's `parent` --
+      // is judged here rather than resolved.
+      const validation = validateScenes(envelope.scenes);
 
       if (!validation.ok) {
         if (attempt >= MAX_STORYBOARD_ATTEMPTS) {
@@ -785,7 +770,7 @@ export class OpenAiLlm implements Llm {
             validation.errors,
           );
         }
-        const errors = [...laid.issues, ...validation.errors];
+        const errors = validation.errors;
         logEvent('warn', { event: 'storyboard.rejected', attempt, errors });
         // The repair carries the same title and script, plus what the validator
         // said about specific scenes.
@@ -793,19 +778,15 @@ export class OpenAiLlm implements Llm {
         continue;
       }
 
-      // The storyboard is drawable. Two complaints can still be worth one
-      // repair ask: an unresolved anchor -- the pass cleared it, so the shape
-      // is drawn where the model put it -- and a total outside the window,
-      // which the per-scene validator cannot see because only `checkBudget`
-      // watches it. One ask is worth it; a second round that could throw the
-      // whole storyboard away over a stray index or a still-short total is
-      // not, so at the last attempt the storyboard is taken as it is -- the
-      // app refuses a render outside the window and offers Regenerate.
+      // The storyboard is drawable. One complaint can still be worth a repair
+      // ask: a total outside the window, which the per-scene validator cannot
+      // see because only `checkBudget` watches it. One ask is worth it; a
+      // second round that could throw the whole storyboard away over a
+      // still-short total is not, so at the last attempt the storyboard is
+      // taken as it is -- the app refuses a render outside the window and
+      // offers Regenerate.
       const budget = checkBudget(validation.scenes);
-      const complaints = [
-        ...(budget.ok ? [] : [budgetRepairInstruction(script, budget)]),
-        ...laid.issues,
-      ];
+      const complaints = budget.ok ? [] : [budgetRepairInstruction(script, budget)];
       if (complaints.length === 0 || attempt >= MAX_STORYBOARD_ATTEMPTS) {
         return validation.scenes;
       }

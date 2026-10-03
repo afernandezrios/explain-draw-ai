@@ -13,15 +13,14 @@ import { KitRoot } from './kit/KitRoot.tsx';
  * always names the WAV the worker synthesized.
  */
 const DEFAULT_SCENE: SceneData = {
+  kind: 'title',
   title: 'Studio default',
   durationSeconds: 10,
-  shapes: [
-    { kind: 'label', x: 10, y: 34, text: 'Explain it by drawing it', size: 10, color: null },
-    { kind: 'underline', x: 10, y: 39, w: 58, color: 'accent' },
-    { kind: 'box', x: 10, y: 52, w: 26, h: 26, color: null },
-    { kind: 'arrow', from: { x: 38, y: 65 }, to: { x: 60, y: 65 }, color: null },
-    { kind: 'circle', x: 76, y: 65, r: 12, color: 'accent' },
-  ],
+  theme: 'dark',
+  accent: 'blue',
+  subtitle: 'Explain it by drawing it',
+  eyebrow: 'Remotion Studio',
+  meta: null,
   // Every scene carries one, so the studio's own scene has to as well.
   narration: 'Every idea gets clearer when you draw it out, one stroke at a time.',
 };

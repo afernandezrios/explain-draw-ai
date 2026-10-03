@@ -1,17 +1,7 @@
 import { Audio } from '@remotion/media';
-import React, { useMemo } from 'react';
-import {
-  AbsoluteFill,
-  Easing,
-  interpolate,
-  staticFile,
-  useCurrentFrame,
-  useVideoConfig,
-} from 'remotion';
-import { PAPER } from '../lib/board.ts';
+import React from 'react';
+import { AbsoluteFill, staticFile } from 'remotion';
 import type { Scene as SceneData } from '../lib/schema.ts';
-import { sceneSvg } from '../lib/svg.ts';
-import { drawWindows } from '../lib/timeline.ts';
 
 export type SceneProps = {
   scene: SceneData;
@@ -27,46 +17,19 @@ export type SceneProps = {
 };
 
 /**
- * One scene, drawn stroke by stroke, with its narration as the clip's audio.
+ * TEMPORARY BRIDGE (Stage 1 of the RemotionUI migration).
  *
- * Every frame builds the same SVG the preview uses, with each shape's draw
- * progress eased from its own slot in the timeline. Shapes whose window has not
- * opened yet are fully dash-offset, so they are invisible rather than missing.
- *
- * The audio starts at the composition's first frame, so a scene's narration
- * begins exactly when its scene begins -- in a preview clip and in the joined
- * video alike, because the join passes this track through untouched.
+ * The stroke-by-stroke SVG drawing is gone, and the RemotionUI blocks that
+ * replace it land in Stage 2. Until then a scene is an empty fill that still
+ * carries its narration, so the audio contract -- one WAV per scene, starting
+ * at the composition's first frame -- keeps being exercised by real renders.
+ * The props are the real ones; only the picture is missing.
  */
-export const Scene: React.FC<SceneProps> = ({ scene, sceneIndex, totalScenes, narrationPath }) => {
-  const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
-
-  const windows = useMemo(
-    () => drawWindows(scene.shapes.length, durationInFrames),
-    [scene.shapes.length, durationInFrames],
-  );
-
-  const progress = useMemo(
-    () =>
-      windows.map((window) =>
-        interpolate(frame, [window.start, window.end], [0, 1], {
-          extrapolateLeft: 'clamp',
-          extrapolateRight: 'clamp',
-          easing: Easing.out(Easing.cubic),
-        }),
-      ),
-    [frame, windows],
-  );
-
-  const svg = useMemo(
-    () => sceneSvg(scene, progress, { width: '100%', height: '100%', sceneIndex, totalScenes }),
-    [scene, progress, sceneIndex, totalScenes],
-  );
-
+export const Scene: React.FC<SceneProps> = ({ narrationPath }) => {
   return (
     <>
       {narrationPath === null ? null : <Audio src={staticFile(narrationPath)} />}
-      <AbsoluteFill style={{ backgroundColor: PAPER }} dangerouslySetInnerHTML={{ __html: svg }} />
+      <AbsoluteFill />
     </>
   );
 };

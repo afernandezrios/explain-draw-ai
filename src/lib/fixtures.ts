@@ -5,8 +5,8 @@
  * with these when a test does not pass its own, and the e2e suite builds its
  * projects and renders from them.
  *
- * Three ten-second scenes: a ~30 second storyboard the tests can actually
- * render end to end in minutes.
+ * Three ten-second scenes -- a title, a list and a pipeline -- a ~30 second
+ * storyboard the tests can actually render end to end in minutes.
  */
 
 import type { Scene } from './schema.ts';
@@ -30,38 +30,44 @@ export const FAKE_SCRIPT: Script = {
 
 export function fakeScenes(): Scene[] {
   const title: Scene = {
-    title: 'Title card',
+    kind: 'title',
+    title: 'How a Cache Works',
     durationSeconds: 10,
-    shapes: [
-      { kind: 'label', x: 8, y: 30, text: 'How a Cache Works', size: 11, color: null },
-      { kind: 'underline', x: 8, y: 35, w: 52, color: 'accent' },
-      { kind: 'stickFigure', x: 84, y: 52, height: 46, color: null },
-      { kind: 'cloud', x: 58, y: 24, w: 22, h: 26, color: 'accent' },
-    ],
+    subtitle: 'A small, fast copy kept close by',
+    eyebrow: 'Explain it simply',
+    meta: null,
+    theme: 'dark',
+    accent: 'blue',
+    narration: 'A cache keeps a small, fast copy of the data you ask for again and again.',
   };
 
   const problem: Scene = {
-    title: 'The problem',
+    kind: 'points',
+    title: 'Why it helps',
     durationSeconds: 10,
-    shapes: [
-      { kind: 'box', x: 8, y: 34, w: 26, h: 30, color: null },
-      { kind: 'label', x: 10, y: 44, text: 'slow disk', size: 7, color: null },
-      { kind: 'arrow', from: { x: 36, y: 49 }, to: { x: 60, y: 49 }, color: null },
-      { kind: 'circle', x: 76, y: 49, r: 13, color: 'emphasis' },
-      { kind: 'label', x: 66, y: 30, text: 'asks again', size: 7, color: 'emphasis' },
+    eyebrow: null,
+    accent: 'green',
+    items: [
+      { label: 'The disk is slow', detail: 'Every read costs time' },
+      { label: 'Requests repeat', detail: 'The same data, over and over' },
+      { label: 'Users wait', detail: null },
     ],
+    narration: 'The disk is slow, requests repeat, and users wait, so we keep the answer close.',
   };
 
   const fix: Scene = {
-    title: 'The fix',
+    kind: 'flow',
+    title: 'The read path',
     durationSeconds: 10,
-    shapes: [
-      { kind: 'cloud', x: 62, y: 32, w: 26, h: 30, color: null },
-      { kind: 'label', x: 52, y: 26, text: 'keep a copy', size: 7, color: null },
-      { kind: 'connector', from: { x: 38, y: 60 }, to: { x: 56, y: 44 }, color: null },
-      { kind: 'circle', x: 20, y: 62, r: 14, color: 'accent' },
-      { kind: 'label', x: 10, y: 80, text: 'fast', size: 8, color: 'accent' },
+    unit: 'reads',
+    packets: 6,
+    accent: 'cyan',
+    stages: [
+      { label: 'Ask', detail: 'the request' },
+      { label: 'Check', detail: 'the fast copy' },
+      { label: 'Serve', detail: null },
     ],
+    narration: 'A request is checked against the fast copy, and served from it when it is there.',
   };
 
   return [title, problem, fix];

@@ -22,7 +22,6 @@ import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathExists, readJsonFile, writeJsonAtomic, writeTextAtomic } from './atomic.ts';
-import { layOutScenes } from './layout.ts';
 import type { Llm, Script } from './llm.ts';
 import {
   CLIPS_DIRNAME,
@@ -171,11 +170,10 @@ export function writeScenes(id: string, scenes: Scenes): void {
 /**
  * Re-validates the stored storyboard, so a hand-edited file cannot slip past.
  *
- * Parse, lay out, validate -- the same three steps generation runs, in the same
+ * Parse, then validate -- the same two steps generation runs, in the same
  * order, so a file that came from a model and a file that came from an editor
- * are judged identically. Laying out an already-laid-out storyboard is a no-op
- * (see `layOutScenes`), which is what makes this safe to do on every read
- * rather than only on the way in.
+ * are judged identically. Nothing here re-arranges the file: each scene kind is
+ * drawn by its own block, which places its own contents.
  */
 export function readScenes(
   id: string,
@@ -188,7 +186,7 @@ export function readScenes(
   if (!structural.success) {
     return { ok: false, errors: issueDetails(structural.error) };
   }
-  return validateScenes(layOutScenes(structural.data).scenes);
+  return validateScenes(structural.data);
 }
 
 export function readStatus(id: string): RenderStatus | null {
