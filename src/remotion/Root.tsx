@@ -1,7 +1,7 @@
 import React from 'react';
 import { Composition, type CalculateMetadataFunction } from 'remotion';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, FPS, secondsToFrames } from '../lib/render-config.ts';
-import type { Scene as SceneData } from '../lib/schema.ts';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, FPS, secondsToFrames } from '../render/render-config.ts';
+import type { Scene as SceneData } from '../scenes/schema.ts';
 import { Scene, type SceneProps } from './Scene.tsx';
 
 /**

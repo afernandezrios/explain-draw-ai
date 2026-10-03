@@ -4,7 +4,7 @@
  * WORKER-ONLY. This module imports kokoro-js and, through it,
  * @huggingface/transformers and onnxruntime-node -- native, multi-hundred-
  * megabyte machinery that must never reach the Next server bundle or the
- * Remotion composition. Only `scripts/render-worker.ts` imports it; nothing
+ * Remotion composition. Only `src/render/worker.ts` imports it; nothing
  * under `src/app/` or `src/remotion/` may.
  *
  * Synthesis is in-process and local: the Kokoro-82M ONNX model (q8, ~90 MB)
@@ -26,7 +26,7 @@ export const DEFAULT_KOKORO_VOICE = 'af_heart';
 /** Relative to the project's own root, not the working directory. */
 export const DEFAULT_KOKORO_MODELS_DIR = 'models';
 
-/** This file sits in `src/lib/`, two directories below the project root. */
+/** This file sits in `src/render/`, two directories below the project root. */
 const PROJECT_ROOT = path.resolve(import.meta.dirname, '..', '..');
 
 /** The quantized (q8) weights on the CPU; the dtype picks `onnx/model_quantized.onnx` out of the repo. */

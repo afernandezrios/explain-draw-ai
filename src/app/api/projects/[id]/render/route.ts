@@ -9,8 +9,8 @@
 import { NextResponse } from 'next/server';
 import { apiError, requireProjectId } from '../../../../../lib/http.ts';
 import { readScenes, readScript } from '../../../../../lib/pipeline.ts';
-import { startJob } from '../../../../../lib/render-jobs.ts';
-import { checkBudget } from '../../../../../lib/schema.ts';
+import { startJob } from '../../../../../render/render-jobs.ts';
+import { checkBudget } from '../../../../../scenes/schema.ts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

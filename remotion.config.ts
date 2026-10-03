@@ -6,7 +6,7 @@ import { Config } from '@remotion/cli/config';
  * `@/*` alias (`@/remotion/lib/layout`), and webpack does not read tsconfig
  * `paths` -- the alias has to be handed to the bundler explicitly. The render
  * worker passes the same mapping to `bundle()` via `webpackAliasOverride`
- * (src/lib/bundle-config.ts), because the programmatic API never loads this
+ * (src/render/bundle-config.ts), because the programmatic API never loads this
  * file.
  */
 Config.overrideWebpackConfig((currentConfiguration) => ({

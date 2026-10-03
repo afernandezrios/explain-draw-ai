@@ -11,8 +11,8 @@
  * order the two writers happen to arrive in does not matter.
  */
 
-import { readJsonFile, writeJsonAtomic } from './atomic.ts';
-import { projectFiles, projectsRoot, readScenes, scenesToVideo } from './pipeline.ts';
+import { readJsonFile, writeJsonAtomic } from '../lib/atomic.ts';
+import { projectFiles, projectsRoot, readScenes, scenesToVideo } from '../lib/pipeline.ts';
 import {
   activeJob as activeJobAt,
   claimLock,

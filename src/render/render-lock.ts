@@ -21,7 +21,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { readJsonFile } from './atomic.ts';
+import { readJsonFile } from '../lib/atomic.ts';
 import { LOCK_FILENAME } from './render-config.ts';
 
 export type RenderLock = {

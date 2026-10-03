@@ -24,7 +24,7 @@ import { fakeScenes } from '../../src/lib/fixtures.ts';
 import { generateProject, regenerateStoryboard } from '../../src/lib/generate.ts';
 import { FakeLlm } from '../../src/lib/llm.ts';
 import { projectFiles, projectsRoot, readScenes, readScript } from '../../src/lib/pipeline.ts';
-import { LOCK_FILENAME, MAX_INPUT_CHARS } from '../../src/lib/render-config.ts';
+import { LOCK_FILENAME, MAX_INPUT_CHARS } from '../../src/render/render-config.ts';
 import {
   IMPOSSIBLE_PID,
   makeProject,

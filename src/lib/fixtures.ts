@@ -9,8 +9,8 @@
  * storyboard the tests can actually render end to end in minutes.
  */
 
-import type { Scene } from './schema.ts';
-import type { Script } from './types.ts';
+import type { Scene } from '../scenes/schema.ts';
+import type { Script } from '../script/types.ts';
 
 export const FAKE_SCRIPT: Script = {
   title: 'How a Cache Works',

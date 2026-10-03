@@ -8,7 +8,7 @@
 
 import { NextResponse } from 'next/server';
 import { requireProjectId } from '../../../../../lib/http.ts';
-import { cancelJob } from '../../../../../lib/render-jobs.ts';
+import { cancelJob } from '../../../../../render/render-jobs.ts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

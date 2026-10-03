@@ -20,10 +20,10 @@ import {
   writeScenes,
   writeScript,
 } from '../../src/lib/pipeline.ts';
-import { LOCK_FILENAME } from '../../src/lib/render-config.ts';
-import type { RenderStatus } from '../../src/lib/render-status.ts';
-import type { Scene } from '../../src/lib/schema.ts';
-import type { Script } from '../../src/lib/types.ts';
+import { LOCK_FILENAME } from '../../src/render/render-config.ts';
+import type { RenderStatus } from '../../src/render/render-status.ts';
+import type { Scene } from '../../src/scenes/schema.ts';
+import type { Script } from '../../src/script/types.ts';
 
 /* ───────────────────────────── projects ─────────────────────────── */
 
@@ -97,7 +97,7 @@ export const FULL_RENDER_FRAMES = 273 * 24;
 /* ─────────────────────────────── worker ─────────────────────────── */
 
 export function workerPath(): string {
-  return path.join(process.cwd(), 'scripts', 'render-worker.ts');
+  return path.join(process.cwd(), 'src', 'render', 'worker.ts');
 }
 
 export type WorkerOutput = { stdout: string; stderr: string };

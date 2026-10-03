@@ -11,8 +11,8 @@ import { NextResponse } from 'next/server';
 import { regenerateStoryboard } from '../../../../../lib/generate.ts';
 import { apiError, requireProjectId } from '../../../../../lib/http.ts';
 import { readScript, writeScript } from '../../../../../lib/pipeline.ts';
-import { activeJob } from '../../../../../lib/render-jobs.ts';
-import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from '../../../../../lib/render-config.ts';
+import { activeJob } from '../../../../../render/render-jobs.ts';
+import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from '../../../../../render/render-config.ts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

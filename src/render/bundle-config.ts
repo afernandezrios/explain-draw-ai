@@ -13,7 +13,7 @@ import type { WebpackOverrideFn } from '@remotion/bundler';
 
 /**
  * The project root is a parameter rather than `process.cwd()` because the
- * worker derives it from its own location (`PROJECT_ROOT` in render-worker.ts)
+ * worker derives it from its own location (`PROJECT_ROOT` in worker.ts)
  * rather than assuming a working directory.
  */
 export function webpackAliasOverride(projectRoot: string): WebpackOverrideFn {

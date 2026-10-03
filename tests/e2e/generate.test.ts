@@ -35,7 +35,7 @@ import {
   writeScenes,
   writeScript,
 } from '../../src/lib/pipeline.ts';
-import { MAX_INPUT_CHARS } from '../../src/lib/render-config.ts';
+import { MAX_INPUT_CHARS } from '../../src/render/render-config.ts';
 import {
   MAX_LABEL_SIZE,
   MAX_LABEL_WORDS,
@@ -51,7 +51,7 @@ import {
   ScenesEnvelopeSchema,
   checkBudget,
   totalSeconds,
-} from '../../src/lib/schema.ts';
+} from '../../src/scenes/schema.ts';
 import { fullStoryboard, makeProject, runWorker, useTempProjectsRoot } from './helpers.ts';
 
 let root = '';

@@ -12,7 +12,7 @@
     "start": "next start",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p src/remotion/tsconfig.json --noEmit",
     "test": "vitest run",
-    "render": "node scripts/render-worker.ts"
+    "render": "node src/render/worker.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "3.5.1",

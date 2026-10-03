@@ -17,9 +17,9 @@ import path from 'node:path';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fakeScenes } from '../../src/lib/fixtures.ts';
 import { readStatus, sceneClipPath } from '../../src/lib/pipeline.ts';
-import { CANVAS_HEIGHT, CANVAS_WIDTH, FPS, LOCK_FILENAME, sceneClipName } from '../../src/lib/render-config.ts';
-import { activeJob, cancelJob, startJob } from '../../src/lib/render-jobs.ts';
-import { claimLock } from '../../src/lib/render-lock.ts';
+import { CANVAS_HEIGHT, CANVAS_WIDTH, FPS, LOCK_FILENAME, sceneClipName } from '../../src/render/render-config.ts';
+import { activeJob, cancelJob, startJob } from '../../src/render/render-jobs.ts';
+import { claimLock } from '../../src/render/render-lock.ts';
 import { DRAW_LEAD_IN_RATIO, DRAW_LEAD_OUT_RATIO, drawWindows } from '../../src/lib/timeline.ts';
 import {
   FULL_RENDER_FRAMES,

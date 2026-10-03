@@ -21,8 +21,8 @@ import { zodResponseFormat } from 'openai/helpers/zod';
 import { z } from 'zod';
 import { FAKE_SCRIPT, fakeScenes } from './fixtures.ts';
 import { logEvent } from './logger.ts';
-import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from './render-config.ts';
-import type { Script } from './types.ts';
+import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from '../render/render-config.ts';
+import type { Script } from '../script/types.ts';
 import {
   ACCENTS,
   MAX_SCENE_SECONDS,
@@ -46,7 +46,7 @@ import {
   validateScenes,
   type BudgetCheck,
   type Scenes,
-} from './schema.ts';
+} from '../scenes/schema.ts';
 
 export const DEFAULT_BASE_URL = 'https://api.deepseek.com';
 export const DEFAULT_MODEL = 'deepseek-v4-flash';

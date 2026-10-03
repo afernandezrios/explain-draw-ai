@@ -11,8 +11,8 @@
 import { NextResponse } from 'next/server';
 import { requireProjectId } from '../../../../../lib/http.ts';
 import { hasVideo, readScenes, readStatus } from '../../../../../lib/pipeline.ts';
-import { activeJob } from '../../../../../lib/render-jobs.ts';
-import { checkBudget } from '../../../../../lib/schema.ts';
+import { activeJob } from '../../../../../render/render-jobs.ts';
+import { checkBudget } from '../../../../../scenes/schema.ts';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';

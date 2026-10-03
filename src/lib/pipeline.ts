@@ -32,9 +32,9 @@ import {
   SCRIPT_FILENAME,
   STATUS_FILENAME,
   sceneClipName,
-} from './render-config.ts';
-import { isRenderStatus, type RenderStatus } from './render-status.ts';
-import { ScenesShapeSchema, issueDetails, validateScenes, type Scenes } from './schema.ts';
+} from '../render/render-config.ts';
+import { isRenderStatus, type RenderStatus } from '../render/render-status.ts';
+import { ScenesShapeSchema, issueDetails, validateScenes, type Scenes } from '../scenes/schema.ts';
 
 export type PipelineErrorKind = 'empty-input' | 'input-too-long' | 'bad-project-id';
 
@@ -227,7 +227,7 @@ export type RenderSpawnOptions = {
   onError: (error: Error) => void;
 };
 
-const WORKER_SCRIPT = path.join('scripts', 'render-worker.ts');
+const WORKER_SCRIPT = path.join('src', 'render', 'worker.ts');
 
 /**
  * Spawns the render worker.

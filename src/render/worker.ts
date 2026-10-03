@@ -22,7 +22,7 @@
  *
  * Exit codes: 0 success, 1 refusal/failure, 130 cancelled.
  *
- * Run directly with: node scripts/render-worker.ts --project <dir>
+ * Run directly with: node src/render/worker.ts --project <dir>
  * (Node runs TypeScript here via type stripping, which is why the shared schema,
  * lock and constants are imported as real .ts modules rather than duplicated.)
  */
@@ -37,8 +37,8 @@ import {
   renderMedia,
   selectComposition,
 } from '@remotion/renderer';
-import { readJsonFile, writeJsonAtomic } from '../src/lib/atomic.ts';
-import { webpackAliasOverride } from '../src/lib/bundle-config.ts';
+import { readJsonFile, writeJsonAtomic } from '../lib/atomic.ts';
+import { webpackAliasOverride } from './bundle-config.ts';
 import {
   AUDIO_BITRATE,
   AUDIO_CODEC,
@@ -62,20 +62,20 @@ import {
   narrationFileName,
   sceneClipName,
   secondsToFrames,
-} from '../src/lib/render-config.ts';
-import { claimLock, releaseLockIfOwnedBy, type RenderLock } from '../src/lib/render-lock.ts';
-import type { RenderStatus } from '../src/lib/render-status.ts';
+} from './render-config.ts';
+import { claimLock, releaseLockIfOwnedBy, type RenderLock } from './render-lock.ts';
+import type { RenderStatus } from './render-status.ts';
 import {
   ScenesShapeSchema,
   checkBudget,
   issueDetails,
   validateScenes,
   type Scene,
-} from '../src/lib/schema.ts';
-import { synthesize } from '../src/lib/tts.ts';
+} from '../scenes/schema.ts';
+import { synthesize } from './tts.ts';
 
 const WORKER_DIR = import.meta.dirname;
-const PROJECT_ROOT = path.resolve(WORKER_DIR, '..');
+const PROJECT_ROOT = path.resolve(WORKER_DIR, '..', '..');
 const ENTRY_POINT = path.join(PROJECT_ROOT, 'src', 'remotion', 'index.ts');
 
 const COMPOSITION_ID = 'Scene';
@@ -93,7 +93,7 @@ type WorkerArgs = {
   statusPath: string;
 };
 
-const USAGE = `Usage: node scripts/render-worker.ts --project <dir> [options]
+const USAGE = `Usage: node src/render/worker.ts --project <dir> [options]
 
   --project <dir>   project folder holding scenes.json (required)
   --status <file>   where to write render status (default <dir>/${STATUS_FILENAME})

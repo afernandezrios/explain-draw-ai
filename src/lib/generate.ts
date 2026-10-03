@@ -28,7 +28,7 @@ import {
   writeScenes,
   writeScript,
 } from './pipeline.ts';
-import { checkBudget, type BudgetCheck, type Scenes } from './schema.ts';
+import { checkBudget, type BudgetCheck, type Scenes } from '../scenes/schema.ts';
 
 /** The numbers the UI shows in the success notices. */
 export type GenerateMeta = {

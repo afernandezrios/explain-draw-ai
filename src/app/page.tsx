@@ -18,9 +18,9 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { GenerateMeta } from '../lib/generate.ts';
-import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from '../lib/render-config.ts';
-import { isTerminal, type RenderStatus } from '../lib/render-status.ts';
-import type { BudgetCheck, Scene } from '../lib/schema.ts';
+import { MAX_INPUT_CHARS, MAX_TITLE_CHARS } from '../render/render-config.ts';
+import { isTerminal, type RenderStatus } from '../render/render-status.ts';
+import type { BudgetCheck, Scene } from '../scenes/schema.ts';
 
 /* ───────────────────────────── wire types ───────────────────────── */
 

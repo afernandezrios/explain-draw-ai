@@ -18,7 +18,7 @@ import { POST as startRender } from '../../src/app/api/projects/[id]/render/rout
 import { GET as video } from '../../src/app/api/projects/[id]/video/route.ts';
 import { fakeScenes } from '../../src/lib/fixtures.ts';
 import { projectFiles, projectsRoot, readStatus } from '../../src/lib/pipeline.ts';
-import { LOCK_FILENAME } from '../../src/lib/render-config.ts';
+import { LOCK_FILENAME } from '../../src/render/render-config.ts';
 import {
   fullStoryboard,
   makeProject,

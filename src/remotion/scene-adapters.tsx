@@ -9,7 +9,7 @@
  * the schema.
  */
 
-import type { Accent, Scene, Theme } from '../lib/schema.ts';
+import type { Accent, Scene, Theme } from '../scenes/schema.ts';
 import type { CodeRevealProps } from '@/remotion/scenes/code-reveal';
 import type { ConceptProps } from '@/remotion/scenes/concept';
 import type { DataFlowPipesProps } from '@/remotion/scenes/data-flow-pipes';

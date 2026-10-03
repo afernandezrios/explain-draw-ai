@@ -1,7 +1,7 @@
 import { Audio } from '@remotion/media';
 import React from 'react';
 import { AbsoluteFill, staticFile } from 'remotion';
-import type { Scene as SceneData } from '../lib/schema.ts';
+import type { Scene as SceneData } from '../scenes/schema.ts';
 import {
   codeRevealProps,
   conceptSceneProps,
