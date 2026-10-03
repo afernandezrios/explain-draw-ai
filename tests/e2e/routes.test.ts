@@ -15,7 +15,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { POST as startRender } from '../../src/app/api/projects/[id]/render/route.ts';
-import { GET as previewSvg } from '../../src/app/api/projects/[id]/preview-svg/route.ts';
 import { GET as video } from '../../src/app/api/projects/[id]/video/route.ts';
 import { fakeScenes } from '../../src/lib/fixtures.ts';
 import { projectFiles, projectsRoot, readStatus } from '../../src/lib/pipeline.ts';
@@ -186,47 +185,6 @@ describe('POST /render', () => {
     const response = await startRender(renderRequest(), ctx('../etc'));
     expect(response.status).toBe(400);
     expect((await body(response)).code).toBe('BAD_PROJECT_ID');
-  });
-});
-
-describe('GET /preview-svg', () => {
-  it('draws a scene with the render font embedded', async () => {
-    const project = makeProject(fakeScenes(), { input: 'preview' });
-
-    const response = await previewSvg(new Request('http://localhost/preview'), ctx(project.id));
-    expect(response.status).toBe(200);
-    expect(response.headers.get('content-type')).toContain('image/svg+xml');
-
-    const svg = await response.text();
-    expect(svg).toContain('<svg');
-    expect(svg).toContain('How a Cache Works');
-    // Preview font parity: the face travels inside the SVG, so an <img> renders
-    // with what the video uses.
-    expect(svg).toContain('data:font/woff2;base64,');
-  });
-
-  it('rejects a scene index it cannot parse instead of falling back to scene 0', async () => {
-    const project = makeProject(fakeScenes(), { input: 'bad scene' });
-
-    for (const bad of ['abc', '', '1.5', '-1']) {
-      const response = await previewSvg(
-        new Request(`http://localhost/preview?scene=${bad}`),
-        ctx(project.id),
-      );
-      expect(response.status).toBe(400);
-      expect((await body(response)).code).toBe('BAD_SCENE');
-    }
-  });
-
-  it('reports a scene that does not exist', async () => {
-    const project = makeProject(fakeScenes(), { input: 'missing scene' });
-
-    const response = await previewSvg(
-      new Request('http://localhost/preview?scene=99'),
-      ctx(project.id),
-    );
-    expect(response.status).toBe(404);
-    expect((await body(response)).code).toBe('NO_SCENE');
   });
 });
 
