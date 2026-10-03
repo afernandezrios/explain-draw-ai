@@ -194,6 +194,85 @@ export function hasVideo(id: string): boolean {
   return pathExists(projectFiles(id).out);
 }
 
+/* ────────────────────────── project listing ─────────────────────── */
+
+/** One row of the projects menu: read from the folder, never stored. */
+export type ProjectSummary = {
+  id: string;
+  /** script.json's title, or the slug the id carries when there is no script. */
+  title: string;
+  /** The id's leading UTC stamp as a time; null when it cannot be read. */
+  createdAt: number | null;
+  hasVideo: boolean;
+  /** The render's stored state; null when there is none or it is unreadable. */
+  status: RenderStatus | null;
+};
+
+/** What the slug inside `YYYY-MM-DD-HH-MM-SS-<slug>-<4hex>[-<n>]` says. */
+function titleFromId(id: string): string {
+  const slug = id
+    .slice(20) // the stamp and its dash are exactly 20 characters
+    .replace(/-[0-9a-f]{4}$/, '') // the random suffix
+    .replace(/-[0-9]+$/, ''); // a collision suffix, if one was needed
+  return slug.replace(/-/g, ' ').trim() || id;
+}
+
+/** The stamp is written by `toISOString`, so it is UTC. */
+function createdAtFromId(id: string): number | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})-(\d{2})-(\d{2})-(\d{2})/.exec(id);
+  if (match === null) {
+    return null;
+  }
+  const [, year, month, day, hour, minute, second] = match.map(Number);
+  const at = Date.UTC(year, month - 1, day, hour, minute, second);
+  return Number.isNaN(at) ? null : at;
+}
+
+/**
+ * Every project folder, newest first.
+ *
+ * Read from the filesystem per call: the "a project is a folder" contract has
+ * no index that could go stale, and a folder someone made by hand is a project
+ * like any other. A folder that passes `isValidProjectId` is listed whatever is
+ * inside it -- the readers it composes each answer for themselves when a file
+ * is missing or unreadable, so one broken folder cannot take the list down.
+ */
+export function listProjects(): ProjectSummary[] {
+  let names: string[];
+  try {
+    names = fs
+      .readdirSync(projectsRoot(), { withFileTypes: true })
+      .filter((entry) => entry.isDirectory() && isValidProjectId(entry.name))
+      .map((entry) => entry.name);
+  } catch {
+    return []; // no projects folder yet
+  }
+
+  const projects = names.map((id): ProjectSummary => {
+    const stored = readScript(id);
+    return {
+      id,
+      // A title that is not a string would reach React as a child it cannot
+      // render, so a hand-edited file falls back to the slug like a missing one.
+      title:
+        typeof stored?.title === 'string' && stored.title.trim() !== ''
+          ? stored.title
+          : titleFromId(id),
+      createdAt: createdAtFromId(id),
+      hasVideo: hasVideo(id),
+      status: readStatus(id),
+    };
+  });
+
+  // Newest first. The stamp only resolves to the second, so ids break ties
+  // (descending, matching the stamp's own order); a folder whose stamp cannot
+  // be read sinks to the bottom rather than being hidden.
+  projects.sort(
+    (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+  );
+  return projects;
+}
+
 /* ────────────────────────────── seams ───────────────────────────── */
 
 export async function textToScript(input: string, llm: Llm): Promise<Script> {

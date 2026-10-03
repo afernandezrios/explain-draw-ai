@@ -48,6 +48,16 @@ type StatusData = {
   budget: BudgetCheck | null;
 };
 
+/** One row of `GET /api/projects`: a folder's own files, read as a summary. */
+type ProjectSummaryRow = {
+  id: string;
+  title: string;
+  createdAt: number | null;
+  hasVideo: boolean;
+  status: RenderStatus | null;
+  renderActive: boolean;
+};
+
 /** The three sections of the control room. All of them are always on screen. */
 type SectionId = 'brief' | 'script' | 'take';
 
@@ -161,6 +171,17 @@ function formatAge(ms: number): string {
   return ms < 60_000 ? 'just now' : `${formatElapsed(ms)} ago`;
 }
 
+/** A project row's date. The id's stamp is UTC; this shows it in the reader's zone. */
+function formatProjectDate(ms: number): string {
+  return new Date(ms).toLocaleString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+}
+
 /** The Script section's `8 ¶`: one paragraph per blank-line-separated block. */
 function paragraphCount(text: string): number {
   return text.split(/\n\s*\n/).filter((block) => block.trim() !== '').length;
@@ -220,10 +241,16 @@ function CheckIcon() {
   );
 }
 
-function ChevronIcon({ direction }: { direction: 'left' | 'right' }) {
+function ChevronIcon({ direction }: { direction: 'left' | 'right' | 'down' }) {
   return (
     <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {direction === 'left' ? <path d="M10 3.5L5.5 8l4.5 4.5" /> : <path d="M6 3.5L10.5 8L6 12.5" />}
+      {direction === 'left' ? (
+        <path d="M10 3.5L5.5 8l4.5 4.5" />
+      ) : direction === 'down' ? (
+        <path d="M3.5 6L8 10.5L12.5 6" />
+      ) : (
+        <path d="M6 3.5L10.5 8L6 12.5" />
+      )}
     </svg>
   );
 }
@@ -328,6 +355,148 @@ function Hud({
             <CloseIcon size={10} />
           </button>
         )
+      )}
+    </div>
+  );
+}
+
+/**
+ * The toolbar's projects menu: every folder in the projects root, newest first.
+ *
+ * It owns its open state and its list fetch; the page supplies the project on
+ * screen and the action that opens another. The fetch happens when the panel
+ * opens and on Refresh, never on a timer -- the folder only changes when
+ * someone makes a project, and the reader is the one who wants to know.
+ */
+function ProjectsMenu({
+  currentId,
+  onOpenProject,
+}: {
+  currentId: string | null;
+  onOpenProject: (id: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [projects, setProjects] = useState<ProjectSummaryRow[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setFailed(false);
+    try {
+      const { ok, data } = await sendJson('/api/projects', 'GET');
+      const list = (data as { projects?: unknown } | null)?.projects;
+      if (!ok || !Array.isArray(list)) {
+        setFailed(true);
+        return;
+      }
+      setProjects(list as ProjectSummaryRow[]);
+      setLoaded(true);
+    } catch {
+      setFailed(true);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Outside click and Escape close the panel. The toggle lives inside
+  // `rootRef`, so the click that opens the panel cannot also close it.
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', onPointerDown);
+    document.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown);
+      document.removeEventListener('keydown', onKeyDown);
+    };
+  }, [open]);
+
+  return (
+    <div className="projects-menu" ref={rootRef}>
+      <button
+        className="button sm"
+        aria-expanded={open}
+        aria-controls="projects-panel"
+        onClick={() => {
+          if (!open) {
+            void load();
+          }
+          setOpen(!open);
+        }}
+      >
+        Projects
+        <ChevronIcon direction={open ? 'down' : 'right'} />
+      </button>
+      {open && (
+        <div className="projects-panel" id="projects-panel">
+          <div className="projects-head">
+            <span className="projects-count">
+              {loaded
+                ? `${projects.length.toLocaleString()} ${projects.length === 1 ? 'project' : 'projects'}`
+                : ''}
+            </span>
+            <button className="button sm" onClick={() => void load()} disabled={loading}>
+              {loading ? 'Loading…' : 'Refresh'}
+            </button>
+          </div>
+          {!loaded && loading && <p className="projects-empty">Loading projects…</p>}
+          {!loading && failed && (
+            <p className="projects-empty">
+              Could not read the projects folder.{' '}
+              <button className="link" onClick={() => void load()}>
+                Try again
+              </button>
+            </p>
+          )}
+          {!loading && !failed && loaded && projects.length === 0 && (
+            <p className="projects-empty">
+              <b>No projects yet.</b> Generate a storyboard and its folder appears here.
+            </p>
+          )}
+          {projects.map((project) => (
+            <button
+              key={project.id}
+              className={`project-row${project.id === currentId ? ' is-current' : ''}`}
+              aria-current={project.id === currentId ? 'true' : undefined}
+              title={project.id}
+              onClick={() => {
+                setOpen(false);
+                onOpenProject(project.id);
+              }}
+            >
+              <span className="project-row-title">{project.title}</span>
+              <span className="project-row-meta">
+                <span>
+                  {project.createdAt !== null ? formatProjectDate(project.createdAt) : project.id}
+                </span>
+                {project.renderActive && <span className="project-badge-live">rendering</span>}
+                {!project.renderActive && project.status?.state === 'failed' && (
+                  <span className="project-badge-failed">failed</span>
+                )}
+                {project.hasVideo && (
+                  <span className="project-badge-video">
+                    <CheckIcon />
+                    video
+                  </span>
+                )}
+              </span>
+            </button>
+          ))}
+        </div>
       )}
     </div>
   );
@@ -578,6 +747,52 @@ export default function HomePage() {
     scrollToSection('brief');
     window.history.replaceState(null, '', '/');
   }, []);
+
+  /**
+   * The projects menu's action: open a folder that already exists.
+   *
+   * The snapshot path is the one a reload takes (`refreshProject`), and so is
+   * the race care: the epoch bump happens first, so everything in flight from
+   * the project being left -- the poll, a save, a render start -- drops its
+   * answer, while this call's own refresh (captured after the bump) is allowed
+   * through. Clearing the state is what stops the old poll outright: its effect
+   * re-runs on the cleared status, and a tick still in the air checks before it
+   * writes. `projectId` and the URL are left to `applyProject`, their single
+   * writer, so a switch that fails leaves the page where it was.
+   */
+  const openPastProject = useCallback(
+    (id: string) => {
+      if (id === projectId) {
+        return; // already looking at it
+      }
+      epochRef.current += 1;
+      openProjectRef.current = null;
+      // No job here is ours: any status the opened project carries is its own
+      // latest outcome, so the "is this the job we started" floor must not
+      // carry over from a render started before the switch.
+      jobStartedAtRef.current = null;
+      setInput('');
+      setScript(null);
+      setScriptDirty(false);
+      setScenes([]);
+      setSceneErrors([]);
+      setBudget(null);
+      setStatus(null);
+      setRenderActive(false);
+      setHasVideo(false);
+      setWorkerGone(null);
+      setRenderLog(null);
+      setError(null);
+      setNotice(null);
+      setDismissed([]);
+      setJobDismissed(false);
+      setCancelling(false);
+      setMediaNonce((n) => n + 1);
+      scrollToSection('brief');
+      void refreshProject(id);
+    },
+    [projectId, refreshProject, scrollToSection],
+  );
 
   const saveScript = useCallback(async (): Promise<boolean> => {
     if (!projectId || !script) {
@@ -1273,6 +1488,7 @@ export default function HomePage() {
         <i className="app-mark" aria-hidden="true" />
         <h1 className="app-title">Explain-Draw AI</h1>
         {script && hasProject && <span className="project-crumb">{script.title}</span>}
+        <ProjectsMenu currentId={projectId} onOpenProject={openPastProject} />
         {projectId !== null && <span className="project-id">{projectId}</span>}
       </header>
 

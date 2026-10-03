@@ -196,6 +196,123 @@ body.app-ground {
   font-variant-numeric: tabular-nums;
 }
 
+/* ──────────────────────── toolbar projects menu ─────────────────── */
+
+/* The toolbar's way back to old work: every folder in the projects root,
+   newest first. The menu is the anchor the panel hangs from. */
+.projects-menu {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.projects-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 30; /* over the fixed job bar (20) */
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(420px, 60vh);
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--c-panel);
+  border: 1px solid var(--c-hairline);
+  border-radius: var(--r-md);
+}
+
+.projects-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 4px 8px;
+  border-bottom: 1px solid var(--c-hairline-soft);
+}
+
+.projects-count {
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.projects-empty {
+  margin: 12px 6px;
+  font-size: 12.5px;
+  color: var(--c-quiet);
+}
+
+.projects-empty b {
+  color: var(--c-ink);
+  font-weight: 600;
+}
+
+/* Each row is a button: the title over its mono meta line. */
+.project-row {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 0;
+  border-left: 3px solid transparent;
+  border-radius: var(--r-sm);
+  background: transparent;
+  font-family: var(--font-ui-stack);
+  text-align: left;
+  cursor: pointer;
+}
+
+.project-row:hover {
+  background: var(--c-control-hover);
+}
+
+/* The project on screen: raised fill, the lamp's edge. */
+.project-row.is-current {
+  background: var(--c-raised);
+  border-left-color: var(--c-rec);
+}
+
+.project-row-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--c-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.project-row-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-family: var(--font-mono-stack);
+  font-size: 11px;
+  color: var(--c-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The artifact check: the icon carries the accent, like .section-count. */
+.project-badge-video {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.project-badge-video svg {
+  color: var(--c-rec);
+}
+
+.project-badge-live {
+  color: var(--c-rec);
+}
+
+.project-badge-failed {
+  color: var(--c-danger);
+}
+
 .workspace {
   flex: 1 1 auto;
   min-height: 0;
